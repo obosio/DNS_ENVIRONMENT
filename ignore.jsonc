@@ -1,0 +1,18 @@
+{
+    "git": [
+        "generated/",
+        "state/",
+        "tmp/",
+        ".env",
+        "*.local",
+        "*.key",
+        "*.conf"
+    ],
+    "dropbox": [],
+    "ssh": [],
+    "local": [],
+    "venv": [],
+    "sensitive": [
+        "*.key"
+    ]
+}

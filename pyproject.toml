@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dns-environment-tooling"
+version = "0.1.0"
+description = "DNS infrastructure, authoritative zone reconciliation, and operational inspection tooling"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dnspython>=2.6.0,<3",
+    "PyYAML>=6.0,<7",
+]
+
+[project.scripts]
+dns-environment = "dns_environment.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest>=8.3,<9"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,300 @@
+metadata:
+  version: 1
+  observed_at: '2026-10-12'
+  dns_primary: ns1.intelisis.com.ar
+  dns_container: 25100
+  description: Reconciliation of External DNS public identities with live CORE-router state.
+  live_changes_authorized: false
+  counts:
+    forward_a_records: 25
+    unique_forward_addresses: 14
+    cname_records: 23
+    mx_records: 4
+    ptr_records: 10
+    reconciled_public_addresses: 16
+
+zone_serials:
+  aero.com.ar: 2026101109
+  intelisis.com.ar: 2026101122
+  polodesalud.com.ar: 2026101103
+  pro3d.com.ar: 2026101102
+  100.121.138.in-addr.arpa: 1503626320
+  101.121.138.in-addr.arpa: 2026100602
+  102.121.138.in-addr.arpa: 1513198928
+  103.121.138.in-addr.arpa: 1513198889
+
+services:
+  - public_address: 138.121.100.1
+    dns_a_names:
+      - ns1.aero.com.ar
+      - ns1.intelisis.com.ar
+      - ns1.polodesalud.com.ar
+      - ns1.pro3d.com.ar
+    ptr_name: ns1.intelisis.com.ar
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback
+    nat_summary: TCP and UDP port 53 to 192.168.25.100
+    role: primary_authoritative_dns
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - Authoritative DNS must remain independently reachable on native TCP and UDP port 53.
+
+  - public_address: 138.121.100.2
+    dns_a_names:
+      - gps.aero.com.ar
+    ptr_name: null
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback
+    nat_summary: TCP ports 80, 443, 5005, 5027, 5055, 5056, 5144, 8080, and 8082 to 192.168.25.8
+    role: gps_application
+    disposition: migration_candidate
+    migration_eligible: conditional
+    blockers:
+      - Inventory application protocols and fixed-port clients before assigning high external ports.
+      - Confirm certificate names and service ownership.
+
+  - public_address: 138.121.100.3
+    dns_a_names:
+      - pbx.aero.com.ar
+    ptr_name: null
+    observed_site: unknown
+    router_assignment: Not assigned on the four audited CORE routers
+    nat_summary: No destination NAT observed on the four audited CORE routers
+    role: pbx_voice
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - Locate the current routing and firewall owner.
+      - Preserve protocol-specific signaling, media, and fixed-port behavior.
+
+  - public_address: 138.121.100.4
+    dns_a_names:
+      - aero.com.ar
+      - intelisis.com.ar
+    ptr_name: aero.com.ar
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback
+    nat_summary: Broad CRM NAT to 192.168.25.20 plus customer TCP port ranges 10000-10474
+    role: shared_web_apex_and_crm_port_fanout
+    disposition: preserve_pending_dedicated_cutover
+    migration_eligible: conditional
+    blockers:
+      - Apex DNS migration requires coordinated handling for both domains.
+      - CNAMEs gestion.aero.com.ar, public.aero.com.ar, and www.aero.com.ar depend on this address.
+      - Existing customer port-range NAT must be separated from apex web traffic.
+
+  - public_address: 138.121.100.5
+    dns_a_names:
+      - mail.aero.com.ar
+      - mail.intelisis.com.ar
+      - mail.polodesalud.com.ar
+      - mail.pro3d.com.ar
+    ptr_name: mail.intelisis.com.ar
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback
+    nat_summary: Mail and HTTPS ports to production Mailcow at 192.168.25.40
+    role: production_mail
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - Preserve PTR, SPF, mail reputation, MX dependencies, and native mail ports.
+
+  - public_address: 138.121.100.7
+    dns_a_names: []
+    ptr_name: mantis.aero.com.ar
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback
+    nat_summary: Temporary TCP 443 DNS-cache rollback to 192.168.25.50:21150
+    role: mantis_legacy_publication_pending_retirement
+    disposition: retirement_pending
+    migration_eligible: false
+    blockers:
+      - Retain through the original External A-record TTL and acceptance window.
+      - Remove the legacy NAT, PTR, and router assignment together after acceptance.
+
+  - public_address: 138.121.100.15
+    dns_a_names:
+      - mantis.aero.com.ar
+      - web.intelisis.com.ar
+    ptr_name: null
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback
+    nat_summary: TCP 21150 to 192.168.25.50:21150 and TCP 21160 to 192.168.25.60:21160
+    role: shared_workload_https_endpoints
+    disposition: active_shared_endpoint
+    migration_eligible: false
+    blockers:
+      - Preserve canonical endpoint ports, exact forward rules, local TLS termination, and scoped DNS-01 renewal.
+
+  - public_address: 138.121.101.3
+    dns_a_names:
+      - iot.intelisis.com.ar
+    ptr_name: iot.intelisis.com.ar
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback
+    nat_summary: TCP 80, 8883, and 8922 to 192.168.25.7; TCP 443 to 192.168.25.7 port 8123
+    role: iot_application
+    disposition: owner_decision_required
+    migration_eligible: conditional
+    blockers:
+      - Inventory IoT client support for non-default public ports.
+      - Preserve MQTT/TLS and application-specific behavior.
+
+  - public_address: 138.121.101.4
+    dns_a_names: []
+    ptr_name: database.intelisis.com.ar
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback
+    nat_summary: TCP port 5432 to 192.168.25.25
+    role: database
+    disposition: owner_decision_required
+    migration_eligible: conditional
+    blockers:
+      - No External A record exists, but the PTR and active database NAT prove the address is in use.
+      - Define a strict source allowlist before any redesign.
+
+  - public_address: 138.121.101.6
+    dns_a_names:
+      - ceis.polodesalud.com.ar
+    ptr_name: ceis.polodesalud.com.ar
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback
+    nat_summary: TCP ports 80, 443, 12321, and 12323 to 192.168.25.151
+    role: ceis_web_application
+    disposition: migration_candidate
+    migration_eligible: conditional
+    blockers:
+      - Inventory ports 12321 and 12323 and their client dependencies.
+      - Confirm service owner and certificate lineage.
+
+  - public_address: 138.121.101.7
+    dns_a_names:
+      - pms.polodesalud.com.ar
+    ptr_name: pms.polodesalud.com.ar
+    observed_site: unknown
+    router_assignment: Not assigned on the four audited CORE routers
+    nat_summary: No destination NAT observed on the four audited CORE routers
+    role: pms_web_application
+    disposition: owner_decision_required
+    migration_eligible: conditional
+    blockers:
+      - Locate the current routing, firewall, and application owner before changing DNS.
+
+  - public_address: 138.121.101.8
+    dns_a_names:
+      - development.intelisis.com.ar
+    ptr_name: null
+    observed_site: tic
+    router_assignment: CORE-ROUTER-TIC loopback
+    nat_summary: TCP port 20022 to 192.168.27.15 port 22
+    role: development_environment
+    disposition: owner_decision_required
+    migration_eligible: conditional
+    blockers:
+      - DNS implies an application endpoint, but only SSH destination NAT was observed.
+      - Inventory the development service before assigning endpoint slots.
+
+  - public_address: 138.121.101.242
+    dns_a_names:
+      - polodesalud.com.ar
+    ptr_name: null
+    observed_site: unknown
+    router_assignment: Not assigned on the four audited CORE routers
+    nat_summary: No destination NAT observed on the four audited CORE routers
+    role: public_zone_apex
+    disposition: preserve_pending_dedicated_cutover
+    migration_eligible: conditional
+    blockers:
+      - Locate the current hosting and routing owner.
+      - www.polodesalud.com.ar depends on this apex.
+
+  - public_address: 138.121.101.246
+    dns_a_names:
+      - pro3d.com.ar
+    ptr_name: null
+    observed_site: unknown
+    router_assignment: Not assigned on the four audited CORE routers
+    nat_summary: No destination NAT observed on the four audited CORE routers
+    role: public_zone_apex
+    disposition: preserve_pending_dedicated_cutover
+    migration_eligible: conditional
+    blockers:
+      - Locate the current hosting and routing owner.
+      - www.pro3d.com.ar depends on this apex.
+
+  - public_address: 138.121.102.1
+    dns_a_names:
+      - ns2.aero.com.ar
+      - ns2.intelisis.com.ar
+      - ns2.polodesalud.com.ar
+      - ns2.pro3d.com.ar
+    ptr_name: ns2.intelisis.com.ar
+    observed_site: centro
+    router_assignment: CORE-ROUTER-CENTRO loopback
+    nat_summary: TCP and UDP port 53 to 192.168.26.100
+    role: secondary_authoritative_dns
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - Authoritative DNS must remain independently reachable on native TCP and UDP port 53.
+
+  - public_address: 138.121.102.6
+    dns_a_names:
+      - projects.intelisis.com.ar
+    ptr_name: projects.intelisis.com.ar
+    observed_site: centro
+    router_assignment: Routed through CORE-ROUTER-CENTRO without a dedicated IP address object
+    nat_summary: Unrestricted protocol and port destination NAT to 192.168.26.10
+    role: projects_application
+    disposition: migration_candidate
+    migration_eligible: conditional
+    blockers:
+      - Inventory every listening service before replacing the broad destination NAT.
+      - Migrate only explicitly approved application ports.
+
+aliases:
+  dedicated_mail:
+    targets:
+      - mail.aero.com.ar
+      - mail.intelisis.com.ar
+      - mail.polodesalud.com.ar
+      - mail.pro3d.com.ar
+    aliases:
+      - autoconfig.aero.com.ar
+      - autodiscover.aero.com.ar
+      - imap.aero.com.ar
+      - smtp.aero.com.ar
+      - autoconfig.intelisis.com.ar
+      - autodiscover.intelisis.com.ar
+      - imap.intelisis.com.ar
+      - smtp.intelisis.com.ar
+      - autoconfig.polodesalud.com.ar
+      - autodiscover.polodesalud.com.ar
+      - imap.polodesalud.com.ar
+      - smtp.polodesalud.com.ar
+      - autoconfig.pro3d.com.ar
+      - autodiscover.pro3d.com.ar
+      - imap.pro3d.com.ar
+      - smtp.pro3d.com.ar
+  apex_dependencies:
+    aero.com.ar:
+      - gestion.aero.com.ar
+      - public.aero.com.ar
+      - www.aero.com.ar
+    polodesalud.com.ar:
+      - www.polodesalud.com.ar
+    pro3d.com.ar:
+      - www.pro3d.com.ar
+  unresolved_targets:
+    services.aero.com.ar:
+      aliases:
+        - owncloud.aero.com.ar
+        - wiki.aero.com.ar
+      finding: No External A or CNAME record for the target was observed.
+
+additional_findings:
+  - web.intelisis.com.ar and mantis.aero.com.ar are active shared workload endpoints on 138.121.100.15.
+  - 138.121.101.2 has active Prestoprenda destination NAT but no A or PTR in the inspected External zones.
+  - No External A or PTR records from 45.238.8.0/22 were observed.
+  - DNS absence is not evidence that an address is unallocated.
