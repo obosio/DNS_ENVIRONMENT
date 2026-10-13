@@ -1,6 +1,6 @@
 # DNS_ENVIRONMENT
 
-Updated: Oct 12, 2026
+Updated: Oct 13, 2026
 
 **DNS infrastructure, authoritative zone reconciliation, and operational audit platform** for the primary and secondary BIND DNS services, zone replication, and split-view publication across all network and cluster boundaries.
 
@@ -21,6 +21,12 @@ This project exists to deliver managed authoritative and recursive DNS infrastru
 - Inspect and monitor live zone serial synchronization, TSIG authenticated replication, and query consistency across views.
 - Provide a clean migration path and approval boundaries for public IP reorganization and DNS cutovers.
 
+The staged DNS record changes for the Database, Gestion, and Mantis TIC
+handoff are documented in
+[`config/tic_workload_dns_cutover_plan.yaml`](config/tic_workload_dns_cutover_plan.yaml).
+They are not live-authorized; apply a service's records only after its target
+guest and route have been verified.
+
 ## Architecture & Topology
 
 | Role | Container | Site | IP Address | Host Node |
@@ -30,9 +36,15 @@ This project exists to deliver managed authoritative and recursive DNS infrastru
 
 ### Authoritative Zones
 
-Twelve replicated zones are managed across two distinct views:
-- **Internal View**: `intelisis.com.ar`, `aero.com.ar`, `polodesalud.com.ar`, `pro3d.com.ar`
-- **External View**: The four forward zones plus reverse zones `100.121.138.in-addr.arpa`, `101.121.138.in-addr.arpa`, `102.121.138.in-addr.arpa`, `103.121.138.in-addr.arpa`.
+Ten zones are replicated across two distinct views:
+- **Internal View**: `intelisis.com.ar`, `aero.com.ar`, `polodesalud.com.ar`
+- **External View**: The same three forward zones plus reverse zones `100.121.138.in-addr.arpa`, `101.121.138.in-addr.arpa`, `102.121.138.in-addr.arpa`, `103.121.138.in-addr.arpa`.
+
+`pro3d.com.ar` was retired from both BIND views on October 13, 2026, by
+operator approval. Its parent delegation remains pointed at Spaceship, whose
+nameservers were returning `REFUSED` during the retirement. The domain will
+remain publicly unavailable until its authoritative zone is correctly served
+there; internal pro3d mail and groupware DNS records were also removed.
 
 ## Tooling & Inspection
 
@@ -42,12 +54,42 @@ A Python CLI tool (`dns-environment`) provides deterministic validation of the r
 # Validate reconciliation data
 .venv/bin/dns-environment validate --reconciliation config/external_dns_reconciliation.yaml
 
-# Run live DNS inspection across all authoritative servers and views
+# Check SOA answers at configured DNS server addresses
 .venv/bin/dns-environment inspect
 
 # Run test suite
 .venv/bin/pytest
 ```
+
+The inspection command queries SOA records without recursion and only treats
+responses carrying the authoritative-answer flag as valid. Use `--reverse` to
+include reverse zones, checked against External-view servers only. When run
+from an RFC1918 client, BIND may intentionally select its Internal view even
+for a public server address; run reverse inspection from an external vantage
+to verify public-view behavior. This unsigned command is source/view dependent;
+it does not enumerate both split views. Use view-specific `rndc zonestatus`
+and External-TSIG queries via the PVE access procedure below when reconciling
+both views.
+
+### Accessing DNS guests for operational verification
+
+Run guest-level checks through the Proxmox VE host that currently runs the
+target LXC, using the PVE project's inventory and credential procedure. After
+connecting to the trusted PVE host, use read-only commands through `pct exec`,
+for example:
+
+```bash
+pct exec 25100 -- rndc status
+pct exec 25100 -- rndc zonestatus 100.121.138.in-addr.arpa IN External
+```
+
+Use CT `25100` on `pve-upr-3-luj` for the primary and CT `26100` on
+`pve-upr-3-cen` for the secondary, confirming current placement before access.
+Do not connect directly to an LXC from the development workstation, bypass SSH
+host-key verification, or expose credentials or TSIG material in command
+output. For External-view checks from an RFC1918 source, use the scoped
+External TSIG identity without printing its secret; unsigned requests may
+select the Internal view according to BIND's client ACLs.
 
 ## Related
 

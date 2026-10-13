@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import dns.flags
 import dns.message
 import dns.query
 import dns.rdatatype
@@ -43,11 +44,14 @@ AUTHORITATIVE_SERVERS = [
     },
 ]
 
+EXTERNAL_AUTHORITATIVE_SERVERS = [
+    server for server in AUTHORITATIVE_SERVERS if server["view"] == "External"
+]
+
 FORWARD_ZONES = [
     "intelisis.com.ar",
     "aero.com.ar",
     "polodesalud.com.ar",
-    "pro3d.com.ar",
 ]
 
 REVERSE_ZONES = [
@@ -85,9 +89,12 @@ class InspectionReport:
 def query_soa(zone: str, server_ip: str, timeout: float = 2.0) -> tuple[int | None, str | None, str | None, str | None]:
     try:
         query = dns.message.make_query(zone, dns.rdatatype.SOA)
+        query.flags &= ~dns.flags.RD
         response = dns.query.udp(query, server_ip, timeout=timeout)
         if response.rcode() != dns.rcode.NOERROR:
             return None, None, None, f"RCODE: {dns.rcode.to_text(response.rcode())}"
+        if not response.flags & dns.flags.AA:
+            return None, None, None, "Response is not authoritative (AA flag missing)"
         for rrset in response.answer:
             if rrset.rdtype == dns.rdatatype.SOA:
                 soa_rr = rrset[0]

@@ -1,0 +1,121 @@
+metadata:
+  version: 1
+  updated_at: '2026-10-13'
+  status: applied_pending_route_acceptance
+  migration_state: gestion_canonical_hostname_cutover
+  live_changes_authorized: false
+  description: >
+    DNS record changes for the Database, Gestion, and Mantis TIC handoff.
+    Gestion's approval remains limited to its canonical hostname. Mantis was
+    separately approved for a canonical CNAME cutover to TIC in both views;
+    shared Aero names remain unchanged.
+
+cutover_gates:
+  - Keep each Lujan source stopped and fenced while its TIC target is active.
+  - Verify target IP, gateway, HTTPS on client port 20202 to guest port 443,
+    SSH on client port 20203 to guest port 22, and return routing.
+  - Back up affected zone files, confirm the current record type and target,
+    and increment each changed zone serial.
+  - Validate zone syntax, reload authoritative DNS, and confirm Internal and
+    External answers on both authoritative servers before announcing cutover.
+  - Retain legacy names and rollback paths through the DNS TTL and acceptance
+    interval; do not apply any change while its service gate is unmet.
+  - Do not change the Internal or External records for aero.com.ar,
+    intelisis.com.ar, www.aero.com.ar, or public.aero.com.ar as part of this
+    Gestion cutover; their existing route remains on Lujan.
+  - Publish tic.intelisis.com.ar as the TIC router address in each view and
+    publish gestion.intelisis.com.ar as a CNAME to tic.intelisis.com.ar.
+  - Remove gestion.aero.com.ar from both views; it is not a service alias.
+  - Clients use https://gestion.intelisis.com.ar:20202/ in both views; DNS
+    does not convey the nonstandard HTTPS port.
+
+services:
+  gestion:
+    canonical_fqdn: gestion.intelisis.com.ar
+    cname_target: tic.intelisis.com.ar
+    target_a_records:
+      internal: 10.8.0.61
+      external: 138.121.101.15
+      ttl: 300
+    internal:
+      action: set_cname
+      route_ports:
+        https: 20202
+        ssh: 20203
+    external:
+      action: set_cname
+      route_ports:
+        https: 20202
+        ssh: 20203
+    legacy:
+      fqdn: gestion.aero.com.ar
+      action: remove_from_internal_and_external_views
+    operator_approval:
+      scope: canonical_hostname_only
+      shared_aero_routes_remain_lujan: true
+      shared_hostname_tls_mismatch_out_of_scope: true
+    state: canonical_cname_published_legacy_nxdomain_external_path_pending
+
+  database:
+    canonical_fqdn: database.intelisis.com.ar
+    target:
+      type: qemu
+      vmid: 27025
+      node: pve-01-tic
+      os: Debian 13
+      postgresql: pgEdge PostgreSQL 17.11
+      spock: installed_not_preloaded_extension_absent_replication_inactive
+      postgis: 3.6.4
+      root_disk: 32G
+      data_wal_disk: 512G
+    internal:
+      action: replace_a
+      address: 192.168.27.25
+    external:
+      action: set_a
+      address: 138.121.101.15
+    ptr:
+      action: unchanged
+      observed_name: database.intelisis.com.ar
+      observed_address: 138.121.101.4
+    legacy_nat:
+      address: 138.121.101.4
+      port: 5432
+      destination: 192.168.25.25
+      action: retain_as_lujan_rollback_configuration
+    state: final_frozen_reconciled_gestion_db_access_verified_application_acceptance_pending
+
+  mantis:
+    canonical_fqdn: mantis.intelisis.com.ar
+    previous_alias_target: lujan.intelisis.com.ar
+    internal:
+      action: replace_cname
+      target: tic.intelisis.com.ar
+      resolved_address: 10.8.0.61
+      ttl: 38400
+    external:
+      action: replace_cname
+      target: tic.intelisis.com.ar
+      resolved_address: 138.121.101.15
+      ttl: 300
+    legacy:
+      fqdn: mantis.aero.com.ar
+      action: already_retired_from_both_views_do_not_recreate
+    operator_approval:
+      scope: canonical_cname_to_tic_in_both_views
+      shared_aero_routes_remain_unchanged: true
+    publication:
+      state: complete
+      primary_serials:
+        internal: 2026101311
+        external: 2026101326
+      secondary_serials:
+        internal: 2026101311
+        external: 2026101326
+      backup_directory: /root/mantis-tic-cname-cutover-20261013T1910Z
+    state: cname_published_in_both_views_service_acceptance_pending
+
+policy:
+  routeros_source_address_restrictions: none
+  source_policy_owner: external_firewall
+  ssh_redirects_required_in_internal_and_external_views: true

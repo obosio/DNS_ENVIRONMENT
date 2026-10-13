@@ -4,7 +4,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from dns_environment.inspector import AUTHORITATIVE_SERVERS, FORWARD_ZONES, REVERSE_ZONES, inspect_zones
+from dns_environment.inspector import (
+    AUTHORITATIVE_SERVERS,
+    EXTERNAL_AUTHORITATIVE_SERVERS,
+    FORWARD_ZONES,
+    REVERSE_ZONES,
+    InspectionReport,
+    inspect_zones,
+)
 from dns_environment.reconciliation import load_reconciliation, validate_reconciliation
 
 
@@ -28,21 +35,25 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 def cmd_inspect(args: argparse.Namespace) -> int:
     include_reverse = getattr(args, "reverse", False)
-    zones = list(FORWARD_ZONES)
+    reports = [inspect_zones(zones=list(FORWARD_ZONES))]
     if include_reverse:
-        zones.extend(REVERSE_ZONES)
+        reports.append(
+            inspect_zones(
+                zones=list(REVERSE_ZONES),
+                servers=EXTERNAL_AUTHORITATIVE_SERVERS,
+            )
+        )
 
     print("Inspecting Authoritative DNS Servers...")
     for srv in AUTHORITATIVE_SERVERS:
         print(f"  - {srv['id']}: {srv['name']} ({srv['ip']}) - {srv['view']} view, {srv['role']} [{srv['site']}]")
 
     print("\nRunning SOA synchronization queries...")
-    report = inspect_zones(zones=zones)
+    for report in reports:
+        for msg in report.summary_messages:
+            print(f"  {msg}")
 
-    for msg in report.summary_messages:
-        print(f"  {msg}")
-
-    return 0 if report.all_ok else 1
+    return 0 if all(report.all_ok for report in reports) else 1
 
 
 def build_parser() -> argparse.ArgumentParser:

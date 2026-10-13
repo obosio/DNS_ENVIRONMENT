@@ -56,8 +56,8 @@ def validate_reconciliation(document: Any) -> dict[str, int]:
         raise ReconciliationValidationError(
             "metadata.live_changes_authorized must remain false for this audit"
         )
-    if len(serials) != 8:
-        raise ReconciliationValidationError("zone_serials must contain eight zones")
+    if len(serials) != 7:
+        raise ReconciliationValidationError("zone_serials must contain seven zones")
     if counts.get("reconciled_public_addresses") != len(services):
         raise ReconciliationValidationError(
             "metadata count does not match reconciled services"
@@ -123,9 +123,9 @@ def validate_reconciliation(document: Any) -> dict[str, int]:
     dedicated_mail = require_mapping(aliases.get("dedicated_mail"), "aliases.dedicated_mail")
     mail_targets = require_list(dedicated_mail.get("targets"), "aliases.dedicated_mail.targets")
     mail_aliases = require_list(dedicated_mail.get("aliases"), "aliases.dedicated_mail.aliases")
-    if len(mail_targets) != 4 or len(mail_aliases) != 16:
+    if len(mail_targets) != 3 or len(mail_aliases) != 12:
         raise ReconciliationValidationError(
-            "aliases.dedicated_mail must contain four targets and 16 aliases"
+            "aliases.dedicated_mail must contain three targets and 12 aliases"
         )
 
     apex_dependencies = require_mapping(
@@ -134,10 +134,9 @@ def validate_reconciliation(document: Any) -> dict[str, int]:
     if set(apex_dependencies) != {
         "aero.com.ar",
         "polodesalud.com.ar",
-        "pro3d.com.ar",
     }:
         raise ReconciliationValidationError(
-            "aliases.apex_dependencies must cover aero, polodesalud, and pro3d"
+            "aliases.apex_dependencies must cover aero and polodesalud"
         )
 
     unresolved_targets = require_mapping(

@@ -1,24 +1,23 @@
 metadata:
   version: 1
-  observed_at: '2026-10-12'
+  observed_at: '2026-10-13'
   dns_primary: ns1.intelisis.com.ar
   dns_container: 25100
   description: Reconciliation of External DNS public identities with live CORE-router state.
   live_changes_authorized: false
   counts:
-    forward_a_records: 25
-    unique_forward_addresses: 14
-    cname_records: 23
-    mx_records: 4
-    ptr_records: 10
-    reconciled_public_addresses: 16
+    forward_a_records: 26
+    unique_forward_addresses: 17
+    cname_records: 20
+    mx_records: 3
+    ptr_records: 9
+    reconciled_public_addresses: 18
 
 zone_serials:
-  aero.com.ar: 2026101109
-  intelisis.com.ar: 2026101122
+  aero.com.ar: 2026101312
+  intelisis.com.ar: 2026101319
   polodesalud.com.ar: 2026101103
-  pro3d.com.ar: 2026101102
-  100.121.138.in-addr.arpa: 1503626320
+  100.121.138.in-addr.arpa: 1503626321
   101.121.138.in-addr.arpa: 2026100602
   102.121.138.in-addr.arpa: 1513198928
   103.121.138.in-addr.arpa: 1513198889
@@ -29,7 +28,6 @@ services:
       - ns1.aero.com.ar
       - ns1.intelisis.com.ar
       - ns1.polodesalud.com.ar
-      - ns1.pro3d.com.ar
     ptr_name: ns1.intelisis.com.ar
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
@@ -81,7 +79,7 @@ services:
     migration_eligible: conditional
     blockers:
       - Apex DNS migration requires coordinated handling for both domains.
-      - CNAMEs gestion.aero.com.ar, public.aero.com.ar, and www.aero.com.ar depend on this address.
+      - CNAMEs public.aero.com.ar and www.aero.com.ar depend on this address.
       - Existing customer port-range NAT must be separated from apex web traffic.
 
   - public_address: 138.121.100.5
@@ -89,7 +87,6 @@ services:
       - mail.aero.com.ar
       - mail.intelisis.com.ar
       - mail.polodesalud.com.ar
-      - mail.pro3d.com.ar
     ptr_name: mail.intelisis.com.ar
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
@@ -102,25 +99,25 @@ services:
 
   - public_address: 138.121.100.7
     dns_a_names: []
-    ptr_name: mantis.aero.com.ar
+    ptr_name: null
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: Temporary TCP 443 DNS-cache rollback to 192.168.25.50:21150
+    nat_summary: Temporary TCP 443 DNS-cache rollback to 192.168.25.50:443
     role: mantis_legacy_publication_pending_retirement
     disposition: retirement_pending
     migration_eligible: false
     blockers:
-      - Retain through the original External A-record TTL and acceptance window.
-      - Remove the legacy NAT, PTR, and router assignment together after acceptance.
+      - Retain the legacy TCP 443 compatibility route through service acceptance.
+      - Remove the legacy TCP 443 NAT and router assignment after acceptance; its PTR is already retired.
 
   - public_address: 138.121.100.15
     dns_a_names:
-      - mantis.aero.com.ar
       - web.intelisis.com.ar
+      - lujan.intelisis.com.ar
     ptr_name: null
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: TCP 21150 to 192.168.25.50:21150 and TCP 21160 to 192.168.25.60:21160
+    nat_summary: TCP 20502 to 192.168.25.50:443, TCP 20503 to 192.168.25.50:22, legacy TCP 21150 to 192.168.25.50:443, WEB TCP 20602 to 192.168.25.60:443, and TCP 20603 to 192.168.25.60:22
     role: shared_workload_https_endpoints
     disposition: active_shared_endpoint
     migration_eligible: false
@@ -142,17 +139,18 @@ services:
       - Preserve MQTT/TLS and application-specific behavior.
 
   - public_address: 138.121.101.4
-    dns_a_names: []
+    dns_a_names:
+      - database.intelisis.com.ar
     ptr_name: database.intelisis.com.ar
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
     nat_summary: TCP port 5432 to 192.168.25.25
     role: database
-    disposition: owner_decision_required
+    disposition: migration_candidate
     migration_eligible: conditional
     blockers:
-      - No External A record exists, but the PTR and active database NAT prove the address is in use.
-      - Define a strict source allowlist before any redesign.
+      - Keep this External name on the existing Lujan database endpoint until the approved TIC target is running and validated.
+      - The operator approved a TIC endpoint on 138.121.101.15:20254, mandatory SSH forwarding on port 20253, and retention of 138.121.101.4:5432 as the Lujan source rollback configuration. Apply only after the TIC target is running; do not add RouterOS source-address restrictions because the external firewall owns source policy.
 
   - public_address: 138.121.101.6
     dns_a_names:
@@ -195,6 +193,19 @@ services:
       - DNS implies an application endpoint, but only SSH destination NAT was observed.
       - Inventory the development service before assigning endpoint slots.
 
+  - public_address: 138.121.101.15
+    dns_a_names:
+      - tic.intelisis.com.ar
+    ptr_name: null
+    observed_site: tic
+    router_assignment: CORE-ROUTER-TIC loopback
+    nat_summary: Public router identity; destination-NAT services are managed separately
+    role: edge_router_public_identity
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - Preserve the edge-router identity; application NAT and service exposure are outside this DNS reconciliation.
+
   - public_address: 138.121.101.242
     dns_a_names:
       - polodesalud.com.ar
@@ -209,26 +220,11 @@ services:
       - Locate the current hosting and routing owner.
       - www.polodesalud.com.ar depends on this apex.
 
-  - public_address: 138.121.101.246
-    dns_a_names:
-      - pro3d.com.ar
-    ptr_name: null
-    observed_site: unknown
-    router_assignment: Not assigned on the four audited CORE routers
-    nat_summary: No destination NAT observed on the four audited CORE routers
-    role: public_zone_apex
-    disposition: preserve_pending_dedicated_cutover
-    migration_eligible: conditional
-    blockers:
-      - Locate the current hosting and routing owner.
-      - www.pro3d.com.ar depends on this apex.
-
   - public_address: 138.121.102.1
     dns_a_names:
       - ns2.aero.com.ar
       - ns2.intelisis.com.ar
       - ns2.polodesalud.com.ar
-      - ns2.pro3d.com.ar
     ptr_name: ns2.intelisis.com.ar
     observed_site: centro
     router_assignment: CORE-ROUTER-CENTRO loopback
@@ -238,6 +234,19 @@ services:
     migration_eligible: false
     blockers:
       - Authoritative DNS must remain independently reachable on native TCP and UDP port 53.
+
+  - public_address: 138.121.102.15
+    dns_a_names:
+      - centro.intelisis.com.ar
+    ptr_name: null
+    observed_site: centro
+    router_assignment: CORE-ROUTER-CENTRO loopback
+    nat_summary: Public router identity; destination-NAT services are managed separately
+    role: edge_router_public_identity
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - Preserve the edge-router identity; application NAT and service exposure are outside this DNS reconciliation.
 
   - public_address: 138.121.102.6
     dns_a_names:
@@ -253,13 +262,25 @@ services:
       - Inventory every listening service before replacing the broad destination NAT.
       - Migrate only explicitly approved application ports.
 
+  - public_address: 45.238.8.15
+    dns_a_names:
+      - cordoba.intelisis.com.ar
+    ptr_name: null
+    observed_site: cordoba
+    router_assignment: CORE-ROUTER-CORDOBA loopback
+    nat_summary: Public router identity; destination-NAT services are managed separately
+    role: edge_router_public_identity
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - Preserve the edge-router identity; application NAT and service exposure are outside this DNS reconciliation.
+
 aliases:
   dedicated_mail:
     targets:
       - mail.aero.com.ar
       - mail.intelisis.com.ar
       - mail.polodesalud.com.ar
-      - mail.pro3d.com.ar
     aliases:
       - autoconfig.aero.com.ar
       - autodiscover.aero.com.ar
@@ -273,19 +294,12 @@ aliases:
       - autodiscover.polodesalud.com.ar
       - imap.polodesalud.com.ar
       - smtp.polodesalud.com.ar
-      - autoconfig.pro3d.com.ar
-      - autodiscover.pro3d.com.ar
-      - imap.pro3d.com.ar
-      - smtp.pro3d.com.ar
   apex_dependencies:
     aero.com.ar:
-      - gestion.aero.com.ar
       - public.aero.com.ar
       - www.aero.com.ar
     polodesalud.com.ar:
       - www.polodesalud.com.ar
-    pro3d.com.ar:
-      - www.pro3d.com.ar
   unresolved_targets:
     services.aero.com.ar:
       aliases:
@@ -294,7 +308,11 @@ aliases:
       finding: No External A or CNAME record for the target was observed.
 
 additional_findings:
-  - web.intelisis.com.ar and mantis.aero.com.ar are active shared workload endpoints on 138.121.100.15.
+  - mantis.intelisis.com.ar is a CNAME to lujan.intelisis.com.ar in both DNS views; its External target resolves to 138.121.100.15 and its Internal target resolves to 10.8.0.21.
+  - web.intelisis.com.ar and lujan.intelisis.com.ar are active shared workload endpoints on 138.121.100.15.
+  - gestion.intelisis.com.ar is a CNAME to tic.intelisis.com.ar in both views; the TIC router A records are 10.8.0.61 Internal and 138.121.101.15 External. gestion.aero.com.ar is absent from both views.
+  - database.intelisis.com.ar remains published at its existing production addresses pending its separate migration.
+  - lujan.intelisis.com.ar, tic.intelisis.com.ar, centro.intelisis.com.ar, and cordoba.intelisis.com.ar identify the public addresses assigned to their respective CORE edge routers.
   - 138.121.101.2 has active Prestoprenda destination NAT but no A or PTR in the inspected External zones.
-  - No External A or PTR records from 45.238.8.0/22 were observed.
+  - 45.238.8.15 now has an External A record for cordoba.intelisis.com.ar; other addresses in 45.238.8.0/22 were not audited here.
   - DNS absence is not evidence that an address is unallocated.

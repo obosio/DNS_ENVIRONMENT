@@ -24,12 +24,12 @@ class ReconciliationValidationTests(unittest.TestCase):
 
     def test_repository_reconciliation_is_valid(self) -> None:
         counts = validate_reconciliation(self.doc)
-        self.assertEqual(counts["services"], 16)
-        self.assertEqual(counts["forward_addresses"], 14)
-        self.assertEqual(counts["dedicated_exception"], 4)
-        self.assertEqual(counts["migration_candidate"], 3)
-        self.assertEqual(counts["owner_decision_required"], 4)
-        self.assertEqual(counts["preserve_pending_dedicated_cutover"], 3)
+        self.assertEqual(counts["services"], 18)
+        self.assertEqual(counts["forward_addresses"], 17)
+        self.assertEqual(counts["dedicated_exception"], 7)
+        self.assertEqual(counts["migration_candidate"], 4)
+        self.assertEqual(counts["owner_decision_required"], 3)
+        self.assertEqual(counts["preserve_pending_dedicated_cutover"], 2)
         self.assertEqual(counts["active_shared_endpoint"], 1)
         self.assertEqual(counts["retirement_pending"], 1)
 
