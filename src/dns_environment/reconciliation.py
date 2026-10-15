@@ -14,6 +14,16 @@ DISPOSITIONS = {
     "active_shared_endpoint",
     "retirement_pending",
 }
+ACCESS_CLASSES = {
+    "public_standard_service",
+    "public_native_protocol",
+    "restricted_admin",
+    "internal_only",
+    "network_identity",
+    "mixed_service_identity",
+    "unresolved",
+    "retired",
+}
 
 
 class ReconciliationValidationError(ValueError):
@@ -48,6 +58,9 @@ def validate_reconciliation(document: Any) -> dict[str, int]:
         reconciliation = require_mapping(document, "reconciliation")
     metadata = require_mapping(reconciliation.get("metadata"), "metadata")
     counts = require_mapping(metadata.get("counts"), "metadata.counts")
+    access_class_policy = require_mapping(
+        metadata.get("access_class_policy"), "metadata.access_class_policy"
+    )
     serials = require_mapping(reconciliation.get("zone_serials"), "zone_serials")
     services = require_list(reconciliation.get("services"), "services")
     aliases = require_mapping(reconciliation.get("aliases"), "aliases")
@@ -61,6 +74,10 @@ def validate_reconciliation(document: Any) -> dict[str, int]:
     if counts.get("reconciled_public_addresses") != len(services):
         raise ReconciliationValidationError(
             "metadata count does not match reconciled services"
+        )
+    if set(access_class_policy) != ACCESS_CLASSES:
+        raise ReconciliationValidationError(
+            "metadata.access_class_policy must document every supported access class"
         )
 
     seen_addresses: set[str] = set()
@@ -106,13 +123,27 @@ def validate_reconciliation(document: Any) -> dict[str, int]:
             "role",
         ):
             require_text(service, field, address)
+        access_class = require_text(service, "access_class", address)
+        if access_class not in ACCESS_CLASSES:
+            raise ReconciliationValidationError(
+                f"{address}: unknown access_class {access_class}"
+            )
+        high_port_eligible = service.get("high_port_migration_eligible")
+        if not isinstance(high_port_eligible, bool):
+            raise ReconciliationValidationError(
+                f"{address}: high_port_migration_eligible must be boolean"
+            )
+        if high_port_eligible and access_class != "restricted_admin":
+            raise ReconciliationValidationError(
+                f"{address}: only restricted_admin services may be high-port migration candidates"
+            )
         migration_eligible = service.get("migration_eligible")
         if migration_eligible not in {True, False, "conditional"}:
             raise ReconciliationValidationError(
                 f"{address}: migration_eligible must be true, false, or conditional"
             )
         blockers = require_list(service.get("blockers"), f"{address}.blockers")
-        if not blockers or any(
+        if any(
             not isinstance(blocker, str) or not blocker.strip()
             for blocker in blockers
         ):
@@ -139,23 +170,19 @@ def validate_reconciliation(document: Any) -> dict[str, int]:
             "aliases.apex_dependencies must cover aero and polodesalud"
         )
 
-    unresolved_targets = require_mapping(
-        aliases.get("unresolved_targets"), "aliases.unresolved_targets"
+    require_mapping(aliases.get("unresolved_targets"), "aliases.unresolved_targets")
+    retired_targets = require_mapping(
+        aliases.get("retired_targets"), "aliases.retired_targets"
     )
-    if "services.aero.com.ar" not in unresolved_targets:
+    if "services.aero.com.ar" not in retired_targets:
         raise ReconciliationValidationError(
-            "aliases.unresolved_targets must cover services.aero.com.ar"
+            "aliases.retired_targets must cover services.aero.com.ar"
         )
 
     if counts.get("unique_forward_addresses") != forward_addresses:
         raise ReconciliationValidationError(
             "unique_forward_addresses does not match services with A records"
         )
-    if "unresolved_targets" not in aliases:
-        raise ReconciliationValidationError(
-            "aliases must document unresolved targets"
-        )
-
     return {
         "services": len(services),
         "forward_addresses": forward_addresses,

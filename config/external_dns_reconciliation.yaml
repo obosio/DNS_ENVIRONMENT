@@ -1,24 +1,33 @@
 metadata:
   version: 1
-  observed_at: '2026-10-13'
+  observed_at: '2026-10-15'
   dns_primary: ns1.intelisis.com.ar
   dns_container: 25100
   description: Reconciliation of External DNS public identities with live CORE-router state.
   live_changes_authorized: false
+  access_class_policy:
+    public_standard_service: Public client-facing web or application service; preserve standard client ports and do not use workload high-port translation.
+    public_native_protocol: Public protocol service; preserve its standard or protocol-required listener ports.
+    restricted_admin: Trusted administrative access only; high-port translation may be considered after audience, client, and source-policy validation.
+    internal_only: No public DNS or NAT publication is authorized.
+    network_identity: Router or routed network identity, not a workload service endpoint.
+    mixed_service_identity: Shared router address with separately managed services; classify each service independently.
+    unresolved: Audience, ownership, activity, or endpoint is not sufficiently verified; do not migrate or activate.
+    retired: Retired address or service; do not republish without approval.
   counts:
-    forward_a_records: 26
-    unique_forward_addresses: 17
-    cname_records: 20
+    forward_a_records: 24
+    unique_forward_addresses: 14
+    cname_records: 18
     mx_records: 3
-    ptr_records: 9
-    reconciled_public_addresses: 18
+    ptr_records: 7
+    reconciled_public_addresses: 20
 
 zone_serials:
-  aero.com.ar: 2026101312
-  intelisis.com.ar: 2026101319
-  polodesalud.com.ar: 2026101103
+  aero.com.ar: 2026101402
+  intelisis.com.ar: 2026101414
+  polodesalud.com.ar: 2026101104
   100.121.138.in-addr.arpa: 1503626321
-  101.121.138.in-addr.arpa: 2026100602
+  101.121.138.in-addr.arpa: 2026101402
   102.121.138.in-addr.arpa: 1513198928
   103.121.138.in-addr.arpa: 1513198889
 
@@ -33,6 +42,8 @@ services:
     router_assignment: CORE-ROUTER-LUJAN loopback
     nat_summary: TCP and UDP port 53 to 192.168.25.100
     role: primary_authoritative_dns
+    access_class: public_native_protocol
+    high_port_migration_eligible: false
     disposition: dedicated_exception
     migration_eligible: false
     blockers:
@@ -44,27 +55,31 @@ services:
     ptr_name: null
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: TCP ports 80, 443, 5005, 5027, 5055, 5056, 5144, 8080, and 8082 to 192.168.25.8
+    nat_summary: Live TCP NAT rule maps ports 80, 443, 5005, 5027, 5055, 5056, 5144, 8080, and 8082 to 192.168.25.8; operator confirmed 8080 is not required, and it refused TCP connections on October 15
     role: gps_application
-    disposition: migration_candidate
-    migration_eligible: conditional
-    blockers:
-      - Inventory application protocols and fixed-port clients before assigning high external ports.
-      - Confirm certificate names and service ownership.
-
-  - public_address: 138.121.100.3
-    dns_a_names:
-      - pbx.aero.com.ar
-    ptr_name: null
-    observed_site: unknown
-    router_assignment: Not assigned on the four audited CORE routers
-    nat_summary: No destination NAT observed on the four audited CORE routers
-    role: pbx_voice
+    access_class: public_standard_service
+    high_port_migration_eligible: false
     disposition: dedicated_exception
     migration_eligible: false
     blockers:
-      - Locate the current routing and firewall owner.
-      - Preserve protocol-specific signaling, media, and fixed-port behavior.
+      - Retain this dedicated public IP because GPS is a public service with multiple standard/fixed client ports.
+      - Operator confirmed TCP 8080 is not required. External TCP checks on October 15 connected to 80, 443, 5005, 5027, 5055, 5056, 5144, and 8082; 8080 was refused both publicly and directly at 192.168.25.8. The live NAT rule still includes 8080; do not change it without separate authorization.
+      - External HEAD checks returned HTTP 301 on port 80, HTTP 200 with valid TLS on 443, and HTTP 200 on 8082. The T55 (5005), Teltonika (5027), OsmAnd (5055), Easytrack (5056), and OwnTracks (5144) TCP listeners accept connections; protocol-level device ingestion and end-to-end acceptance remain pending.
+      - Do not send synthetic telemetry to production protocol listeners. Complete protocol acceptance with a designated test device or service-owner confirmation; do not apply workload high-port translation or generic shared web ingress.
+
+  - public_address: 138.121.100.3
+    dns_a_names: []
+    ptr_name: null
+    observed_site: unknown
+    router_assignment: Not assigned on the four audited CORE routers
+    nat_summary: No address assignment, host route, or destination NAT observed on the four audited CORE routers. The External A record was removed; pbx.aero.com.ar remains Internal at 192.168.26.6.
+    role: pbx_internal_only
+    access_class: internal_only
+    high_port_migration_eligible: false
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - Keep PBX internal-only; do not publish an External A or add destination NAT.
 
   - public_address: 138.121.100.4
     dns_a_names:
@@ -73,14 +88,16 @@ services:
     ptr_name: aero.com.ar
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: Broad CRM NAT to 192.168.25.20 plus customer TCP port ranges 10000-10474
+    nat_summary: TCP 80 and 443 to TIC Gestion CT 27020 at 192.168.27.20; customer TCP port-range mappings 10000-10474 include 53 enabled and 42 disabled rules, with gaps at 10145-10149 and 10235-10239 and no rules for 10475-10500.
     role: shared_web_apex_and_crm_port_fanout
-    disposition: preserve_pending_dedicated_cutover
+    access_class: public_standard_service
+    high_port_migration_eligible: false
+    disposition: active_shared_endpoint
     migration_eligible: conditional
     blockers:
-      - Apex DNS migration requires coordinated handling for both domains.
-      - CNAMEs public.aero.com.ar and www.aero.com.ar depend on this address.
-      - Existing customer port-range NAT must be separated from apex web traffic.
+      - Apex HTTP/HTTPS forwarding on Lujan currently targets TIC Gestion at 192.168.27.20; preserve and revalidate this cross-site route.
+      - Keep public.aero.com.ar and www.aero.com.ar as CNAMEs to aero.com.ar in both views.
+      - Do not change customer TCP port-range rules until the owners clarify the disabled mappings and unconfigured gaps.
 
   - public_address: 138.121.100.5
     dns_a_names:
@@ -92,23 +109,62 @@ services:
     router_assignment: CORE-ROUTER-LUJAN loopback
     nat_summary: Mail and HTTPS ports to production Mailcow at 192.168.25.40
     role: production_mail
+    access_class: public_native_protocol
+    high_port_migration_eligible: false
     disposition: dedicated_exception
     migration_eligible: false
     blockers:
       - Preserve PTR, SPF, mail reputation, MX dependencies, and native mail ports.
+
+  - public_address: 138.121.100.6
+    dns_a_names:
+      - iot.intelisis.com.ar
+    ptr_name: null
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback; TIC, Centro, and Cordoba route this /32 through their Lujan backhauls
+    nat_summary: TCP ports 80, 8883, and 8922 to 192.168.25.7; TCP 443 to 192.168.25.7 port 8123
+    role: iot_application
+    access_class: public_native_protocol
+    high_port_migration_eligible: false
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - External A was published as 138.121.100.6 on October 15; Internal A remains 192.168.25.7.
+      - TCP 80 is refused by guest port 80 while guest port 1880 accepts connections; public TCP 443 fails TLS negotiation, and TCP 8883 presents an expired certificate. Complete service remediation and acceptance.
+      - The enabled TCP 8922 forward is administrative and remains separate from the proposed disabled TCP 20073 path on .100.15.
+      - PTR for 138.121.100.6 is absent; the prior 138.121.101.3 PTR still names this service pending separate reverse-DNS approval.
 
   - public_address: 138.121.100.7
     dns_a_names: []
     ptr_name: null
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: Temporary TCP 443 DNS-cache rollback to 192.168.25.50:443
-    role: mantis_legacy_publication_pending_retirement
-    disposition: retirement_pending
+    nat_summary: TCP ports 22, 80, and 443 to 192.168.25.9 (Prestoprenda Server)
+    role: prestoprenda_external_public_service
+    access_class: public_standard_service
+    high_port_migration_eligible: false
+    disposition: dedicated_exception
     migration_eligible: false
     blockers:
-      - Retain the legacy TCP 443 compatibility route through service acceptance.
-      - Remove the legacy TCP 443 NAT and router assignment after acceptance; its PTR is already retired.
+      - Keep external-owner DNS control and confirm external publication before retiring 138.121.101.2.
+      - Keep this endpoint external-only; do not add Internal DNS publication.
+
+  - public_address: 138.121.100.8
+    dns_a_names:
+      - ceis.polodesalud.com.ar
+    ptr_name: null
+    observed_site: lujan
+    router_assignment: CORE-ROUTER-LUJAN loopback; TIC, Centro, and Cordoba route this /32 through their Lujan backhauls
+    nat_summary: TCP ports 80, 443, 12321, and 12323 to 192.168.25.151
+    role: ceis_web_application
+    access_class: public_standard_service
+    high_port_migration_eligible: false
+    disposition: dedicated_exception
+    migration_eligible: false
+    blockers:
+      - External A was published as 138.121.100.8 on October 15; Internal A remains 192.168.25.151.
+      - TCP ports 80, 443, 12321, and 12323 accept connections on the target; HTTPS presents a valid certificate for ceis.polodesalud.com.ar. Application-level and required UDP 12321 acceptance remain pending.
+      - PTR for 138.121.100.8 is absent; the prior 138.121.101.6 PTR still names this service pending separate reverse-DNS approval.
 
   - public_address: 138.121.100.15
     dns_a_names:
@@ -117,8 +173,10 @@ services:
     ptr_name: null
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: TCP 20502 to 192.168.25.50:443, TCP 20503 to 192.168.25.50:22, legacy TCP 21150 to 192.168.25.50:443, WEB TCP 20602 to 192.168.25.60:443, and TCP 20603 to 192.168.25.60:22
+    nat_summary: WEB TCP 20602 to 192.168.25.60:443 and TCP 20603 to 192.168.25.60:22
     role: shared_workload_https_endpoints
+    access_class: restricted_admin
+    high_port_migration_eligible: true
     disposition: active_shared_endpoint
     migration_eligible: false
     blockers:
@@ -129,55 +187,60 @@ services:
       - iot.intelisis.com.ar
     ptr_name: iot.intelisis.com.ar
     observed_site: lujan
-    router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: TCP 80, 8883, and 8922 to 192.168.25.7; TCP 443 to 192.168.25.7 port 8123
-    role: iot_application
-    disposition: owner_decision_required
-    migration_eligible: conditional
+    router_assignment: No address assignment or /32 route found on the four audited CORE routers on October 15; routes now use 138.121.100.6
+    nat_summary: No matching NAT rule found on the four audited CORE routers; the External A now points to 138.121.100.6
+    role: retired_iot_public_endpoint_pending_ptr_cleanup
+    access_class: retired
+    high_port_migration_eligible: false
+    disposition: retirement_pending
+    migration_eligible: false
     blockers:
-      - Inventory IoT client support for non-default public ports.
-      - Preserve MQTT/TLS and application-specific behavior.
+      - The IoT External A moved to 138.121.100.6 on October 15. This prior address has no CORE assignment, route, or NAT and is no longer a rollback endpoint.
+      - Its PTR still points to iot.intelisis.com.ar; remove or reassign that PTR only after explicit reverse-DNS approval.
 
   - public_address: 138.121.101.4
-    dns_a_names:
-      - database.intelisis.com.ar
-    ptr_name: database.intelisis.com.ar
+    dns_a_names: []
+    ptr_name: null
     observed_site: lujan
-    router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: TCP port 5432 to 192.168.25.25
-    role: database
-    disposition: migration_candidate
+    router_assignment: Removed from CORE-ROUTER-LUJAN loopback; no assignment or /32 route remains on the four audited CORE routers
+    nat_summary: No current destination NAT; address was removed from the four audited CORE routers and is selected for a future Ollama endpoint
+    role: ollama_selected_public_address_pending_reactivation
+    access_class: public_native_protocol
+    high_port_migration_eligible: false
+    disposition: preserve_pending_dedicated_cutover
     migration_eligible: conditional
     blockers:
-      - Keep this External name on the existing Lujan database endpoint until the approved TIC target is running and validated.
-      - The operator approved a TIC endpoint on 138.121.101.15:20254, mandatory SSH forwarding on port 20253, and retention of 138.121.101.4:5432 as the Lujan source rollback configuration. Apply only after the TIC target is running; do not add RouterOS source-address restrictions because the external firewall owns source policy.
+      - Operator selected this address for Ollama; verify it remains available for reactivation and restore its Lujan loopback assignment and /32 route before DNS/NAT publication.
+      - Keep Ollama DNS unpublished and planned TCP 11434 NAT disabled until TLS termination, application authentication, routing, and external reachability are verified.
 
   - public_address: 138.121.101.6
-    dns_a_names:
-      - ceis.polodesalud.com.ar
+    dns_a_names: []
     ptr_name: ceis.polodesalud.com.ar
     observed_site: lujan
-    router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: TCP ports 80, 443, 12321, and 12323 to 192.168.25.151
-    role: ceis_web_application
-    disposition: migration_candidate
-    migration_eligible: conditional
+    router_assignment: No address assignment or /32 route found on the four audited CORE routers on October 15; routes now use 138.121.100.8
+    nat_summary: No matching NAT rule found on the four audited CORE routers; the External A now points to 138.121.100.8
+    role: retired_ceis_public_endpoint_pending_ptr_cleanup
+    access_class: retired
+    high_port_migration_eligible: false
+    disposition: retirement_pending
+    migration_eligible: false
     blockers:
-      - Inventory ports 12321 and 12323 and their client dependencies.
-      - Confirm service owner and certificate lineage.
+      - The CEIS External A moved to 138.121.100.8 on October 15; this prior address has no CORE assignment, route, or NAT and is no longer a rollback endpoint.
+      - Its PTR still points to ceis.polodesalud.com.ar; remove or reassign that PTR only after explicit reverse-DNS approval.
 
   - public_address: 138.121.101.7
-    dns_a_names:
-      - pms.polodesalud.com.ar
-    ptr_name: pms.polodesalud.com.ar
+    dns_a_names: []
+    ptr_name: null
     observed_site: unknown
     router_assignment: Not assigned on the four audited CORE routers
-    nat_summary: No destination NAT observed on the four audited CORE routers
-    role: pms_web_application
-    disposition: owner_decision_required
-    migration_eligible: conditional
+    nat_summary: PMS was retired by operator approval; no address assignment, host route, or destination NAT was observed on the four audited CORE routers
+    role: retired_pms_endpoint
+    access_class: retired
+    high_port_migration_eligible: false
+    disposition: dedicated_exception
+    migration_eligible: false
     blockers:
-      - Locate the current routing, firewall, and application owner before changing DNS.
+      - Do not republish PMS or treat 138.121.101.7 as available without separate address-allocation review.
 
   - public_address: 138.121.101.8
     dns_a_names:
@@ -187,11 +250,14 @@ services:
     router_assignment: CORE-ROUTER-TIC loopback
     nat_summary: TCP port 20022 to 192.168.27.15 port 22
     role: development_environment
+    access_class: restricted_admin
+    high_port_migration_eligible: true
     disposition: owner_decision_required
     migration_eligible: conditional
     blockers:
-      - DNS implies an application endpoint, but only SSH destination NAT was observed.
-      - Inventory the development service before assigning endpoint slots.
+      - Development is private-use; its current public-network path is SSH administration only, TCP 20022 to 192.168.27.15:22. Do not infer a public web service from the DNS name.
+      - Keep the existing endpoint until the replacement target/listener and external-firewall policy are verified and the owner accepts the cutover.
+      - The disabled TCP 20153 proposal targets the current VM; the disabled TCP 20653 proposal targets VM 27065 at 192.168.27.65, which is not present in the latest guest inventory. Do not enable either mapping or change DNS until the exact target and client cutover are verified.
 
   - public_address: 138.121.101.15
     dns_a_names:
@@ -201,6 +267,8 @@ services:
     router_assignment: CORE-ROUTER-TIC loopback
     nat_summary: Public router identity; destination-NAT services are managed separately
     role: edge_router_public_identity
+    access_class: mixed_service_identity
+    high_port_migration_eligible: false
     disposition: dedicated_exception
     migration_eligible: false
     blockers:
@@ -210,15 +278,16 @@ services:
     dns_a_names:
       - polodesalud.com.ar
     ptr_name: null
-    observed_site: unknown
-    router_assignment: Not assigned on the four audited CORE routers
-    nat_summary: No destination NAT observed on the four audited CORE routers
+    observed_site: lujan
+    router_assignment: Active host route through CORE-ROUTER-LUJAN PPPoE-in session backbone-16; TIC, Centro, and Cordoba route this address over their Lujan backhauls
+    nat_summary: No local address assignment or destination NAT observed. Lujan routes 138.121.101.242/32 via 192.168.102.194 on the active pppoe-backbone-16 interface.
     role: public_zone_apex
-    disposition: preserve_pending_dedicated_cutover
-    migration_eligible: conditional
+    access_class: public_standard_service
+    high_port_migration_eligible: false
+    disposition: dedicated_exception
+    migration_eligible: false
     blockers:
-      - Locate the current hosting and routing owner.
-      - www.polodesalud.com.ar depends on this apex.
+      - Operator-confirmed correct; preserve the current DNS and PPPoE route without further changes.
 
   - public_address: 138.121.102.1
     dns_a_names:
@@ -230,6 +299,8 @@ services:
     router_assignment: CORE-ROUTER-CENTRO loopback
     nat_summary: TCP and UDP port 53 to 192.168.26.100
     role: secondary_authoritative_dns
+    access_class: public_native_protocol
+    high_port_migration_eligible: false
     disposition: dedicated_exception
     migration_eligible: false
     blockers:
@@ -243,6 +314,8 @@ services:
     router_assignment: CORE-ROUTER-CENTRO loopback
     nat_summary: Public router identity; destination-NAT services are managed separately
     role: edge_router_public_identity
+    access_class: network_identity
+    high_port_migration_eligible: false
     disposition: dedicated_exception
     migration_eligible: false
     blockers:
@@ -256,6 +329,8 @@ services:
     router_assignment: Routed through CORE-ROUTER-CENTRO without a dedicated IP address object
     nat_summary: Unrestricted protocol and port destination NAT to 192.168.26.10
     role: projects_application
+    access_class: unresolved
+    high_port_migration_eligible: false
     disposition: migration_candidate
     migration_eligible: conditional
     blockers:
@@ -270,6 +345,8 @@ services:
     router_assignment: CORE-ROUTER-CORDOBA loopback
     nat_summary: Public router identity; destination-NAT services are managed separately
     role: edge_router_public_identity
+    access_class: network_identity
+    high_port_migration_eligible: false
     disposition: dedicated_exception
     migration_eligible: false
     blockers:
@@ -300,19 +377,82 @@ aliases:
       - www.aero.com.ar
     polodesalud.com.ar:
       - www.polodesalud.com.ar
-  unresolved_targets:
+  unresolved_targets: {}
+  retired_targets:
     services.aero.com.ar:
-      aliases:
+      removed_names:
         - owncloud.aero.com.ar
         - wiki.aero.com.ar
-      finding: No External A or CNAME record for the target was observed.
+        - fileserver.aero.com.ar
+        - services.aero.com.ar
+      previous_internal_target: 192.168.25.10
+      verification: authoritative_nxdomain_both_views_both_authorities
+      verified_at: '2026-10-14'
+      backup_directory: /root/dns-cleanup-20261014T1722Z
 
 additional_findings:
-  - mantis.intelisis.com.ar is a CNAME to lujan.intelisis.com.ar in both DNS views; its External target resolves to 138.121.100.15 and its Internal target resolves to 10.8.0.21.
+  - Verified October 14 on both authorities. aero.com.ar and intelisis.com.ar are apex A records, 10.8.0.21 in Internal and 138.121.100.4 in External; www.aero.com.ar and public.aero.com.ar are CNAMEs to aero.com.ar; lujan.intelisis.com.ar remains 10.8.0.21 Internal and 138.121.100.15 External.
+  - Lujan TCP 80/443 NAT for public 138.121.100.4 and internal 10.8.0.21 forwards to running TIC Gestion CT 27020 at 192.168.27.20. No NAT rules were changed during the DNS correction.
+  - Approved October 14 retirement: database.intelisis.com.ar has no A record in either forward view, its stale PTR at 138.121.101.4 was removed, and both names return authoritative NXDOMAIN in both views on both authorities. db1.intelisis.com.ar remains active at 192.168.27.25 Internal and 138.121.101.15 External. The old 138.121.101.4 address assignment and resulting /32 route have now also been removed from all audited CORE routers.
+  - Approved October 14 retirement: services.aero.com.ar, fileserver.aero.com.ar, owncloud.aero.com.ar, and wiki.aero.com.ar were removed from their applicable Aero view records. All four return authoritative NXDOMAIN in both views on both authorities. The approved names mantis.aero.com.ar and gestion.aero.com.ar also remain NXDOMAIN in both views on both authorities.
+  - October 14 CORE/PVE audit and approved cleanup: PMS A records were removed from both polodesalud.com.ar views and its External PTR was removed; PBX External A was removed while its Internal A remains 192.168.26.6. Both changes were validated and replicated to the secondary DNS authority.
+  - October 14 router cleanup: 138.121.101.4/32 was removed from the Lujan loopback; its dynamic host route disappeared locally and from TIC, Centro, and Cordoba. No NAT for this address or the deleted Database guest remains on the four CORE routers.
+  - October 14 operator disposition: the polodesalud.com.ar A record at 138.121.101.242, www CNAME, and active route through Lujan PPPoE-in session backbone-16 via 192.168.102.194 are correct and are to remain unchanged.
+  - The retired mailcow-pilot.intelisis.com.ar name and 138.121.100.8 PTR both return authoritative NXDOMAIN on primary and secondary; the pilot PTR cleanup is verified.
+  - polodesalud.com.ar remains A 138.121.101.242 in both views and www.polodesalud.com.ar remains a CNAME to the apex. Its MX points to mail.intelisis.com.ar. The operator confirmed the existing route through Lujan PPPoE-in backbone-16 is correct; no further Polo change is required.
+  - pms.polodesalud.com.ar returns NXDOMAIN in both views and has no External PTR following the approved retirement. pbx.aero.com.ar remains A 192.168.26.6 in Internal and is absent from External; no PBX destination NAT exists on the four audited CORE routers.
+  - mantis.intelisis.com.ar is a CNAME to tic.intelisis.com.ar in both DNS views; its External target resolves to 138.121.101.15 and its Internal target resolves to 10.8.0.61. TIC forwards ports 20502/20503 to CT 27050; no Mantis forwarding was found on Lujan.
+  - Mantis is a private-use application that intentionally remains reachable through the public network at TIC ports 20502/20503; the private audience is distinct from the public access path.
   - web.intelisis.com.ar and lujan.intelisis.com.ar are active shared workload endpoints on 138.121.100.15.
   - gestion.intelisis.com.ar is a CNAME to tic.intelisis.com.ar in both views; the TIC router A records are 10.8.0.61 Internal and 138.121.101.15 External. gestion.aero.com.ar is absent from both views.
-  - database.intelisis.com.ar remains published at its existing production addresses pending its separate migration.
+  - db1.intelisis.com.ar is published through TIC at 138.121.101.15; legacy database.intelisis.com.ar and its former 138.121.101.4 PTR are retired. Source CT 25025 is deleted, no old :5432 NAT remains, and 138.121.101.4/32 has been removed from Lujan and withdrawn from all four CORE routers.
   - lujan.intelisis.com.ar, tic.intelisis.com.ar, centro.intelisis.com.ar, and cordoba.intelisis.com.ar identify the public addresses assigned to their respective CORE edge routers.
   - 138.121.101.2 has active Prestoprenda destination NAT but no A or PTR in the inspected External zones.
+  - Operator direction October 15: Prestoprenda is externally resolved and administered, must retain its own public IP, and must not receive Internal DNS publication from this environment.
+  - Operator direction October 15: keep Mailcow multi-tenant on its existing service/address, make mail.intelisis.com.ar the canonical host, and use CNAMEs for compatible service-host aliases. Keep each mail domain apex's MX/TXT records instead of making apexes CNAMEs; have MX point directly to the canonical mail host.
   - 45.238.8.15 now has an External A record for cordoba.intelisis.com.ar; other addresses in 45.238.8.0/22 were not audited here.
   - DNS absence is not evidence that an address is unallocated.
+  - Operator direction October 15: S3 is private and is staged for high-port NAT; four TIC mappings remain planned and disabled. Ollama will use operator-selected 138.121.101.4, subject to address reactivation, route, TLS, and authentication verification; 138.121.101.3 remains assigned to IoT. Netmgr's External CNAME to lujan.intelisis.com.ar is already documented as published. LTS and groupware identities are deprecated; groupware.aero.com.ar retirement remains pending authoritative DNS execution and verification. DNS retirement does not authorize deleting LXC 25004.
+
+planned_address_reassignments:
+  - service: gps
+    fqdn: gps.aero.com.ar
+    current_public_address: 138.121.100.2
+    target_public_address: 138.121.100.2
+    status: router_and_dns_verified_application_acceptance_pending
+    planned_ports: [tcp/80, tcp/443, tcp/5005, tcp/5027, tcp/5055, tcp/5056, tcp/5144, tcp/8082]
+    blockers:
+      - Internal authoritative DNS resolves gps.aero.com.ar to 192.168.25.8, and public resolvers return 138.121.100.2; the four CORE-router address, route, and Lujan NAT state were verified on October 15.
+      - Operator confirmed TCP 8080 is not required. Its active NAT mapping remains unchanged pending separate authorization; external TCP checks succeeded on the other eight required ports.
+      - Complete protocol-level acceptance for device-ingestion ports with an approved test device or owner confirmation; no address change is proposed.
+  - service: iot
+    fqdn: iot.intelisis.com.ar
+    current_public_address: 138.121.101.3
+    target_public_address: 138.121.100.6
+    status: external_a_published_service_validation_blocked
+    planned_ports: [tcp/80, tcp/443, tcp/8883]
+    blockers:
+      - External A now resolves to .100.6 and Internal A remains .25.7. The former .101.3 has no CORE assignment, route, or NAT; its stale PTR remains pending separate approval.
+      - TCP 80 is refused at the backend while guest port 1880 accepts connections; TLS on 443 fails negotiation and port 8883 presents an expired certificate. Repair and accept these services before considering the cutover complete.
+      - The enabled target TCP 8922 forward is administrative, separate from planned TCP 20073 on .100.15; do not change it without authorization. Confirm the effective firmware URL and listener.
+  - service: prestoprenda
+    fqdn: web.prestoprenda.com.ar
+    current_public_address: 138.121.101.2
+    target_public_address: 138.121.100.7
+    status: router_state_verified_external_dns_owner_cutover_pending
+    dns_owner: external
+    internal_dns_publication: prohibited
+    planned_ports: verify_existing_nat_before_cutover
+    blockers:
+      - Router assignment, host route, and NAT listeners are present on CORE-ROUTER-LUJAN; complete external-owner DNS control verification before cutover.
+      - Do not withdraw .101.2 until the replacement endpoint and external DNS have been accepted.
+  - service: ceis
+    fqdn: ceis.polodesalud.com.ar
+    current_public_address: 138.121.101.6
+    target_public_address: 138.121.100.8
+    status: external_a_published_pending_ptr_and_application_acceptance
+    planned_ports: [tcp/80, tcp/443, tcp/12321, tcp/12323, udp/12321]
+    blockers:
+      - External A now resolves to .100.8 and Internal A remains .25.151; the former .101.6 has no CORE assignment, route, or NAT.
+      - TCP 80, 443, 12321, and 12323 accept connections and HTTPS has a valid certificate; application-level acceptance and required UDP 12321 remain unverified.
+      - PTR for .100.8 is absent while .101.6 still has the old CEIS PTR; reverse-DNS cleanup requires separate approval. Shared-proxy migration remains a later change.

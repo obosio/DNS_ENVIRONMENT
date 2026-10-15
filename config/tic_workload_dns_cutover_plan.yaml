@@ -1,28 +1,99 @@
 metadata:
   version: 1
-  updated_at: '2026-10-13'
-  status: applied_pending_route_acceptance
-  migration_state: gestion_canonical_hostname_cutover
-  live_changes_authorized: false
+  updated_at: '2026-10-15'
+  status: db1_internal_client_acceptance_passed_external_route_waived_source_deleted
+  migration_state: db1_tls_deployed_all_internal_clients_verified_source_deleted
+  live_changes_authorized: true
   description: >
     DNS record changes for the Database, Gestion, and Mantis TIC handoff.
-    Gestion's approval remains limited to its canonical hostname. Mantis was
-    separately approved for a canonical CNAME cutover to TIC in both views;
-    shared Aero names remain unchanged.
+    The Database DNS cutover is published in both views, and the canonical
+    hostname was renamed from database.intelisis.com.ar to db1.intelisis.com.ar.
+    Traccar, Node-RED, and CRM were switched to the new hostname. A valid
+    production certificate for db1 was deployed to PostgreSQL and reloaded;
+    target-local Certbot owns DNS-01 renewal and the PostgreSQL deployment
+    hook. CRM remains on `sslmode=verify-full`, and its web route and all nine
+    workers now pass internal acceptance. Traccar and Node-RED database
+    acceptance also pass. The operator waived external-vantage testing, so
+    public route reachability remains unverified. Source CT 25025 was deleted
+    after cutover to reclaim storage and is no longer available for rollback.
+    The intended next phase is a new PostgreSQL peer in CLUSTER-CORDOBA.
+    Candidate VM `24025` was created as `db2.intelisis.com.ar` on
+    `pve-upr-3-cor` with a 32 GiB OS disk and separate 512 GiB data/WAL disk.
+    The October 14 live check found the guest network unreachable. The
+    RouterOS PASSTHROUGH bridge already covered VLANs 25-27; VLAN 25 was
+    missing only from the Córdoba switch PASSTHROUGH bridge VLAN table. After
+    operator approval, it was added tagged on the router-facing and PVE-facing
+    switch trunks. The operator then identified the subnet egress drop as old
+    and requested its removal; this restored Debian mirror access. QEMU Guest
+    Agent, the persistent PostgreSQL data disk, and pgEdge PostgreSQL 17.11
+    with Spock 5.0.13/PostGIS 3.6.4 are now installed and verified. PostgreSQL
+    listens only on localhost; the Spock extension is not created or
+    preloaded, and replication remains inactive. TLS, DNS/client routing, and
+    replication design/approval remain pending.
+    Gestion's approval remains limited to its canonical hostname. Mantis's
+    approved canonical CNAME cutover to TIC is live in both views. Its TIC
+    HTTPS/SSH redirects are active and no Mantis forwarding remains on Lujan.
+    Public Mantis client-port acceptance is unverified from the available
+    workstation. The separately approved shared apex DNS targets were
+    published and verified in both views on both authorities on October 14.
+
+shared_apex_dns:
+  status: live_verified_both_views_both_authorities
+  records:
+    aero.com.ar:
+      internal_a: 10.8.0.21
+      external_a: 138.121.100.4
+    intelisis.com.ar:
+      internal_a: 10.8.0.21
+      external_a: 138.121.100.4
+    www.aero.com.ar:
+      type: CNAME
+      target: aero.com.ar
+      views: [internal, external]
+    public.aero.com.ar:
+      type: CNAME
+      target: aero.com.ar
+      views: [internal, external]
+    lujan.intelisis.com.ar:
+      internal_a: 10.8.0.21
+      external_a: 138.121.100.15
+      change: none
+  zone_serials:
+    internal:
+      aero.com.ar: 2026101401
+      intelisis.com.ar: 2026101403
+    external:
+      aero.com.ar: 2026101401
+      intelisis.com.ar: 2026101414
+  lujan_apex_nat:
+    router: CORE-ROUTER-LUJAN
+    internal_and_external_http_https_destination: 192.168.27.20
+    target_guest: TIC_CT_27020
+    target_state: running
+    target_address_verified: 192.168.27.20
+    customer_tcp_range:
+      requested_range: 10000-10500
+      configured_rules_overlapping_range: 95
+      enabled_rules: 53
+      disabled_rules: 42
+      configured_port_gaps: [10145-10149, 10235-10239, 10475-10500]
+      changed_during_dns_cutover: false
 
 cutover_gates:
   - Keep each Lujan source stopped and fenced while its TIC target is active.
-  - Verify target IP, gateway, HTTPS on client port 20202 to guest port 443,
-    SSH on client port 20203 to guest port 22, and return routing.
+  - For Gestion, verify target IP, gateway, HTTPS on client port 20202 to
+    guest port 443, SSH on client port 20203 to guest port 22, and return
+    routing.
   - Back up affected zone files, confirm the current record type and target,
     and increment each changed zone serial.
   - Validate zone syntax, reload authoritative DNS, and confirm Internal and
     External answers on both authoritative servers before announcing cutover.
-  - Retain legacy names and rollback paths through the DNS TTL and acceptance
-    interval; do not apply any change while its service gate is unmet.
-  - Do not change the Internal or External records for aero.com.ar,
-    intelisis.com.ar, www.aero.com.ar, or public.aero.com.ar as part of this
-    Gestion cutover; their existing route remains on Lujan.
+  - Retain only explicitly approved rollback paths through the DNS TTL and
+    acceptance interval; remove service-specific legacy paths when the
+    approved cutover requires their retirement.
+  - The shared-apex records were handled under the separate October 14
+    approval and are verified in both views; do not change them as part of
+    remaining Gestion cutover work.
   - Publish tic.intelisis.com.ar as the TIC router address in each view and
     publish gestion.intelisis.com.ar as a CNAME to tic.intelisis.com.ar.
   - Remove gestion.aero.com.ar from both views; it is not a service alias.
@@ -49,7 +120,7 @@ services:
         ssh: 20203
     legacy:
       fqdn: gestion.aero.com.ar
-      action: remove_from_internal_and_external_views
+      action: keep_absent_from_internal_and_external_views
     operator_approval:
       scope: canonical_hostname_only
       shared_aero_routes_remain_lujan: true
@@ -57,7 +128,12 @@ services:
     state: canonical_cname_published_legacy_nxdomain_external_path_pending
 
   database:
-    canonical_fqdn: database.intelisis.com.ar
+    canonical_fqdn: db1.intelisis.com.ar
+    legacy:
+      fqdn: database.intelisis.com.ar
+      action: retire_forward_name_and_external_ptr
+      state: authoritative_nxdomain_both_forward_views_and_reverse_ptr_absent
+      verified_at: '2026-10-14'
     target:
       type: qemu
       vmid: 27025
@@ -68,6 +144,567 @@ services:
       postgis: 3.6.4
       root_disk: 32G
       data_wal_disk: 512G
+    future_active_active_peer:
+      state: os_and_pgEdge_17_prepared_replication_inactive
+      site: Cordoba
+      cluster: CLUSTER-CORDOBA
+      proposed_fqdn: db2.intelisis.com.ar
+      workload_address: 192.168.24.25
+      vmid: 24025
+      node: pve-upr-3-cor
+      resources: 4_vcpu_8gib_ram_32g_os_512g_data
+      ip_observation:
+        last_checked_utc: '2026-10-14T17:41:12Z'
+        icmp_from_pve_node: 3_of_3_replies
+        icmp_from_workstation: 3_of_3_replies
+        ssh_to_debian_port_22: authenticated_as_debian_with_operator_verified_host_key
+        ssh_host_key_sha256: SHA256:flPcEdzAjvt9QplVWOQ98OqmDtCieQWOHFCNcNLI/ME
+        router_arp: resolved_BC:24:11:EE:12:B7
+        router_gateway: 192.168.24.1_on_SERVERS
+        router_vlan_25: servers-pas_on_PASSTHROUGH
+      pve_network_path_observation:
+        bridge: vmbr0_vlan_aware_bridge_vids_2-4094
+        vm_tap: tap24025i0_vlan_25_pvid_untagged
+        bond0_vlan_25: admitted
+        vm_mac_fdb: learned_on_tap24025i0_vlan_25
+      layer2_path_observation:
+        router_vlan_interface: servers-pas_id_25_running
+        router_bridge: PASSTHROUGH_vlan_filtering_enabled
+        router_bridge_vlan_table: vlan_25_in_existing_25-27_range_tagged_on_TRUNK-CLUSTER_and_TRUNK-CRS
+        switch_bridge: PASSTHROUGH_vlan_filtering_enabled
+        switch_bridge_vlan_table: vlan_25_added_tagged_on_TRUNK-CCR_and_TRUNK-CLUSTER
+        switch_router_uplink: TRUNK-CCR_running
+        switch_pve_uplink: TRUNK-CLUSTER_running
+        switch_vlan_25_current_tagged: [TRUNK-CCR, TRUNK-CLUSTER]
+        vm_mac_learned_on_router_and_switch_vlan_25: true
+        diagnosis: switch_bridge_vlan_25_membership_was_missing
+        router_vlan_change: none_needed_or_made
+        switch_vlan_change: applied_after_operator_approval
+      operator_requested_firewall_cleanup:
+        router: CORE-ROUTER-CORDOBA
+        removed_rule_id: '*14'
+        chain: forward
+        action: drop
+        source: 192.168.24.0/24
+        out_interface_list: PROVIDERS
+        reason: operator_confirmed_old_block_and_approved_removal_as_valid
+        remaining_exact_enabled_rule_count: 0
+        guest_mirror_access_after_removal: verified
+      guest_egress:
+        gateway_ping: 2_of_2_replies
+        debian_dns_resolution: verified
+        debian_https_from_guest_after_firewall_cleanup: verified
+        debian_https_from_pve_host: verified
+        apt_get_update: succeeded
+      guest_readiness:
+        os: Debian_13_trixie
+        hostname: db2
+        configured_ip: 192.168.24.25/24_on_ens18
+        openssh_server: installed_active_enabled
+        qemu_guest_agent: 1:10.0.13+ds-0+deb13u1_active_and_proxmox_responsive
+        e2fsprogs: 1.47.2-3+b12
+        guest_hostname_and_ip_verified: true
+        data_disk: sdb_512gib
+        data_disk_partition: sdb1_gpt_512gib_linux_filesystem_type
+        data_disk_filesystem: ext4_label_pgdata_uuid_c0d49596-26bd-48f7-867b-1e37c63e77fa
+        data_disk_mount: /var/lib/postgresql
+        fstab_entry: uuid_based_defaults_noatime
+        systemd_startup_guard: AssertPathIsMountPoint_var_lib_postgresql
+        postgres_account: present_postgres_ownership_verified
+      postgresql_preparation:
+        repository: official_pgEdge_apt_pgedge_release_1.0-2
+        postgresql_package: pgedge-postgresql-17_17.11-1.trixie
+        spock_package: pgedge-postgresql-17-spock50_5.0.13-1.trixie
+        postgis_package: pgedge-postgresql-17-postgis-3_3.6.4-1.trixie
+        cluster: '17/main_online'
+        data_directory: /var/lib/postgresql/17/main
+        listen_addresses: localhost
+        shared_preload_libraries: ''
+        spock_extension_created: false
+        wal_level: logical
+        track_commit_timestamp: true
+        max_worker_processes: 16
+        max_logical_replication_workers: 8
+        max_wal_senders: 16
+        max_replication_slots: 16
+        max_sync_workers_per_subscription: 4
+        replication_connections: 0
+        wal_receiver_processes: 0
+      shared_suffix_pair_authorization: approved_by_operator
+      replication_intent:
+        topology: true_multiwriter
+        client_destination_selection: future_external_load_balancer
+        load_balancer_selection_criteria: not_yet_implemented
+        database_and_replication_scope: aero_crm_only
+        postgres_database: excluded_default_maintenance_database_no_user_objects
+        uuid_rehearsal_on_db2:
+          status: completed_on_isolated_clone_replication_still_inactive
+          observed_at_utc: '2026-10-15T01:43:21Z'
+          rehearsal_database: aero_crm_uuid_rehearsal
+          source_database: aero_crm_on_db1
+          production_db1_changes: none
+          application_table_count: 151
+          original_public_pk_count: 127
+          original_public_fk_count: 164
+          non_extension_pk_tables_with_uuid_not_null: 126
+          application_tables_without_pk: 25
+          no_pk_tables_with_unique_index_candidate: 11
+          no_pk_tables_without_unique_index_candidate: 14
+          no_pk_tables_with_unique_index_all_key_columns_not_null: 10
+          no_pk_tables_with_unique_index_needing_not_null_review: 1
+          crm_association_tables_without_pk: 13
+          association_tables_without_unique_index: 2
+          association_pair_audit:
+            documentos_comerciales_asociados:
+              rows: 355539
+              null_key_rows: 0
+              duplicate_pairs: 0
+            franquicias_usuarios:
+              rows: 215
+              null_key_rows: 0
+              duplicate_pairs: 0
+            cajas_operaciones_de_caja:
+              rows: 82
+              null_key_rows: 0
+              duplicate_pairs: 0
+              unique_index_key_columns_declared_not_null: false
+          a2billing_source_import_tables_without_pk: 12
+          a2billing_replication_scope: excluded_from_ongoing_peer_replication
+          a2billing_data_disposition:
+            decision: retain_on_db1_as_read_only_legacy_history
+            decided_by: operator
+            decided_at: '2026-10-15'
+            drop_or_move_authorized: false
+            preserve_under_existing_backup_policy: true
+            peer_application_dependency_check:
+              deployed_source_search: completed
+              matching_source_files:
+                - /srv/crm-production/lib/tasks/documentos_comerciales.rake
+              other_current_runtime_references_found: false
+              db1_connected_crm_sessions: 9
+              db1_connected_crm_role: crm_rehearsal_app
+              db1_connected_crm_address: 192.168.27.20
+              db2_running_crm_services_or_processes_found: false
+              db2_external_database_clients: 0
+              checked_at_utc: '2026-10-15T03:36:25Z'
+            database_read_only_enforcement: pending_separate_privilege_review
+            replication_exclusion_preflight_required: true
+            current_replication_configuration_check:
+              observed_at_db1_utc: '2026-10-15T03:36:25Z'
+              observed_at_db2_utc: '2026-10-15T03:36:44Z'
+              db1_publications: 0
+              db1_published_tables: 0
+              db1_subscriptions: 0
+              db1_logical_slots: 0
+              db1_replication_senders: 0
+              db2_publications: 0
+              db2_published_tables: 0
+              db2_subscriptions: 0
+              db2_logical_slots: 0
+              db2_replication_senders: 0
+              db2_external_clients: 0
+              outcome: no_replication_configured_so_no_table_set_to_inspect
+              publication_exclusion_verification: required_before_activation
+          a2billing_production_lifecycle_trace:
+            observed_at_utc: '2026-10-15T02:33:38Z'
+            database: aero_crm_on_db1
+            table_count: 12
+            nonempty_tables: 11
+            cc_call_rows: 0
+            update_delete_stats: zero_counters_reset_horizon_unknown
+            applied_legacy_migrations:
+              - '20171225223719'
+              - '20180115142509'
+            billing_schedule_days: [1, 11]
+            cron_service: active
+            installed_cron_config: /etc/cron.d/crm-production
+            successful_last_execution_verified: false
+            last_cron_invocation_local: '2026-10-11T05:16:01-03:00'
+            last_cron_invocation_utc: '2026-10-11T08:16:01Z'
+            invocation_completion_status: unknown
+            last_successful_execution_timestamp: unknown
+            cc_call_source: external_a2billing
+            external_a2billing_status: operator_confirmed_fully_deprecated
+            deprecation_confirmed_at_utc: '2026-10-15'
+            cron_schedule_is_stale_legacy_configuration: true
+            cron_disabled: true
+            disabled_on: '2026-10-15'
+            disabled_entries: 2
+            active_matching_entries_after_change: 0
+            cron_service_after_change: active
+            pre_change_cron_backup: /root/crm-production-before-disable-a2billing-20261015
+            remote_access_decommissioned_verified: false
+            cc_card_used_by_importer: true
+            cc_card_refresh_path_in_current_crm_source: not_found
+            cc_call_normalized_destination: llamadas_telefonicas
+            other_table_rebuildability: not_established
+            cron_task_source_file: /srv/crm-production/lib/tasks/documentos_comerciales.rake
+            deployed_source_search_other_runtime_references_found: false
+            proposed_scope: db1_local_legacy_read_only_excluded_from_peer_replication
+            record_timestamp_audit:
+              observed_at_utc: '2026-10-15T02:52:56Z'
+              date_like_columns_storage: text
+              created_at_updated_at_audit_columns: absent
+              values_are_business_dates_not_last_modified_times: true
+              latest_values:
+                cc_billing_customer: 'date=2017-12-18; start_date=2017-12-01'
+                cc_call: empty
+                cc_callerid: no_date_like_column
+                cc_card: 'lastuse=2017-12-25; creationdate=2017-12-05; expirationdate_max=2027-12-05'
+                cc_card_subscription: 'last_run=2017-12-22; startdate=2017-12-23; stopdate_sentinel=2038-01-01'
+                cc_charge: 'creationdate=2017-12-28'
+                cc_cpe_update: 'lastaccess=2017-12-25; updated_and_eq_cfg_update_are_flags'
+                cc_electr_invoice: 'fecha_cbte=20171222; fecha_serv_hasta=20171231'
+                cc_invoice: 'latest_not_after_observation=2026-08-16; overall_max=2030-07-16; future_dated_rows=4'
+                cc_invoice_item: 'date=2017-12-26'
+                cc_status_log: 'updated_date=2017-12-22T21:25:51'
+                cc_subscription_service: 'datelastrun=2017-12-24T02:00:35; datecreate=2017-11-08'
+              external_a2billing_connection_verified: false
+              external_a2billing_status: operator_confirmed_fully_deprecated
+              deprecation_confirmed_at_utc: '2026-10-15'
+              cron_schedule_is_stale_legacy_configuration: true
+              cron_disabled: true
+              disabled_entries: 2
+              active_matching_entries_after_change: 0
+              cron_service_after_change: active
+              pre_change_cron_backup: /root/crm-production-before-disable-a2billing-20261015
+              last_logged_cron_invocation_utc: '2026-10-11T08:16:01Z'
+              cron_entry_reports_completion_status: false
+              evidence_supports_legacy_data: true
+          crm_association_tables_live_audit:
+            observed_at_utc: '2026-10-15T03:44:40Z'
+            database: aero_crm_on_db1
+            mode: read_only
+            tables_audited: 13
+            null_key_rows_total: 0
+            duplicate_ordered_pairs_total: 0
+            validated_foreign_keys: 26
+            valid_ready_unique_pair_indexes: 11
+            tables_with_pair_columns_not_null: 10
+            unique_index_but_nullable_pair_columns:
+              - cajas_operaciones_de_caja
+            no_unique_pair_index:
+              - documentos_comerciales_asociados
+              - franquicias_usuarios
+            exact_row_counts:
+              cajas_operaciones_de_caja: 82
+              categorias_de_servicio_condiciones_frente_al_iva: 5
+              conceptos_de_facturacion_tipos_de_detalle: 38
+              condiciones_frente_al_iva_impuestos: 9
+              documentos_comerciales_asociados: 355539
+              estados_de_instalacion_productos: 1100
+              franquicias_usuarios: 215
+              impuestos_tipos_de_detalle: 36
+              permisos_roles: 112
+              productos_compatibles: 3260
+              roles_usuarios: 96
+              tipos_de_detalle_tipos_de_documento_comercial: 29
+              tipos_de_documento_comercial_asociables: 5
+            candidate_ordered_pairs:
+              cajas_operaciones_de_caja: [caja_id, operacion_de_caja_id]
+              categorias_de_servicio_condiciones_frente_al_iva: [categoria_de_servicio_id, condicion_frente_al_iva_id]
+              conceptos_de_facturacion_tipos_de_detalle: [concepto_de_facturacion_id, tipo_de_detalle_id]
+              condiciones_frente_al_iva_impuestos: [condicion_frente_al_iva_id, impuesto_id]
+              documentos_comerciales_asociados: [documento_comercial_id, documento_comercial_asociado_id]
+              estados_de_instalacion_productos: [estado_de_instalacion_id, producto_id]
+              franquicias_usuarios: [franquicia_id, usuario_id]
+              impuestos_tipos_de_detalle: [impuesto_id, tipo_de_detalle_id]
+              permisos_roles: [permiso_id, rol_id]
+              productos_compatibles: [producto_id, producto_compatible_id]
+              roles_usuarios: [rol_id, usuario_id]
+              tipos_de_detalle_tipos_de_documento_comercial: [tipo_de_detalle_id, tipo_de_documento_comercial_id]
+              tipos_de_documento_comercial_asociables: [tipo_de_documento_comercial_id, tipo_de_documento_comercial_asociable_id]
+            productos_compatibles_reverse_pair_rows: 2374
+            productos_compatibles_mutual_pairs: 1187
+            productos_compatibles_self_links: 0
+            documentos_comerciales_asociados_reverse_pairs: 0
+            documentos_comerciales_asociados_self_links: 0
+            deployed_source_search:
+              completed: true
+              matching_areas: [models, controllers, jobs, scripts, views, assets]
+              confirms_tables_are_live_crm_relationships: true
+            db1_current_application_client: crm_ct_192.168.27.20
+            db2_application_processes_or_external_clients: 0
+            clone_uuid_shadow_audit:
+              observed_at_utc: '2026-10-15T04:00:40Z'
+              uuid_shadow_columns: 26
+              null_uuid_pairs_total: 0
+              duplicate_ordered_uuid_pairs_total: 0
+            temporary_table_constraint_rehearsal:
+              observed_on_utc_date: '2026-10-15'
+              tables: [cajas_operaciones_de_caja, categorias_de_servicio_condiciones_frente_al_iva, conceptos_de_facturacion_tipos_de_detalle, condiciones_frente_al_iva_impuestos, documentos_comerciales_asociados, estados_de_instalacion_productos, franquicias_usuarios, impuestos_tipos_de_detalle, permisos_roles, productos_compatibles, roles_usuarios, tipos_de_detalle_tipos_de_documento_comercial, tipos_de_documento_comercial_asociables]
+              all_13_uuid_pairs_rehearsed: true
+              not_null_and_pair_uniqueness_enforced: true
+              duplicate_pairs_rejected: true
+              null_keys_rejected: true
+              reverse_document_association_pair_allowed: true
+              transaction_rolled_back: true
+              permanent_clone_changes: false
+            deployed_caller_review:
+              duplicate_pair_insertion_intended_for_dca_or_franchise_user_links: not_found
+              service_cancellation_deduplicates_document_links: true
+              franchise_and_role_links_use_habtm: true
+              cash_operation_link_is_checked_for_authorization: true
+              cash_operation_pair_unique_index_already_present: true
+              direct_sql_writer_found_in_deployed_crm_source: false
+              product_compatibility_links_written_both_directions: true
+              reverse_product_pair_is_distinct_ordered_row: true
+              duplicate_rejection_compatibility_tests_required: true
+            targeted_automated_tests_for_duplicate_assignment_found: false
+            recommended_identity_design:
+              include_crm_associations_in_replication_scope: true
+              identity: ordered_pair_of_parent_uuid_relationship_columns
+              preserve_direction_for_productos_compatibles: true
+              approval_status: recommendation_pending_approval
+              compatibility_tests_required_before_pair_uniqueness:
+                - documentos_comerciales_asociados
+                - franquicias_usuarios
+              caller_review_required_before_legacy_nullability_change:
+                - cajas_operaciones_de_caja
+              uuid_identity_columns_must_be_complete: true
+              production_ddl_authorized: false
+            replica_identity_approval: pending
+            production_schema_or_data_changed: false
+          no_pk_replica_identity_review: pending_for_13_crm_association_tables
+          validated_uuid_fk_constraints: 164
+          uuid_parent_unique_indexes: 126
+          uuid_child_fk_indexes: 164
+          pk_uuid_null_audit_total: 0
+          fk_uuid_null_audit_total: 0
+          materialized_views_populated: 5_of_5
+          extension_owned_tables_excluded: [public.spatial_ref_sys]
+        write_conflict_handling: pending_design
+        schema_and_sequence_policy: pending_design
+        tls_and_replication_network: pending_design
+        split_brain_and_fencing: pending_design
+        replication_activation: not_authorized_until_design_approval
+        gate_0:
+          status: guardrails_approved_detailed_design_and_evidence_pending
+          guardrail_approval_date: '2026-10-15'
+          closes_only_after_all_decisions_approved_with_owner_and_dated_evidence: true
+          initial_live_inventory:
+            observed_at_utc: '2026-10-15T04:40:59Z'
+            current_crm_app_writer_host: crm_ct_192.168.27.20
+            db1_crm_application_sessions: 9
+            db1_crm_application_role: crm_rehearsal_app
+            db2_application_services_processes_or_external_clients: 0
+            db1_crm_services: 1_web_9_workers
+            active_cron_rake_entries: 10
+            disabled_a2billing_cron_entries: 2
+            active_a2billing_billing_task: false
+            table_scope:
+              public_tables: 152
+              public_tables_with_pk: 127
+              public_tables_without_pk: 25
+              postgis_owned_tables_excluded: 1
+              crm_application_tables: 151
+              crm_application_tables_with_pk: 126
+              crm_association_tables_in_scope: 13
+              a2billing_legacy_tables_out_of_scope: 12
+              target_scope_count: 139
+              exact_live_table_name_manifest: pending
+            workflow_table_writer_matrix: pending
+          approval_checklist:
+            - id: topology_and_peer_lifecycle
+              status: direction_approved_details_pending
+              approved_at: '2026-10-15'
+              approved_direction: scalable_pgEdge_Spock_logical_multiwriter_db1_to_dbn_incremental_peer_addition
+              writer_guardrail: db1_remains_sole_writer_until_separate_gates_pass
+              evidence_required: topology_version_matrix_and_repeatable_add_remove_reseed_procedure
+            - id: writer_ownership
+              status: guardrail_approved_current_writer_location_verified_workflow_matrix_pending
+              approved_at: '2026-10-15'
+              policy: db1_sole_writer_during_preparation_uuid_rollout_peer_seeding_and_validation
+              peer_writes: require_explicit_per_workflow_approval_after_conflict_idempotency_and_fencing_policies
+              observed_at_utc: '2026-10-15T04:40:59Z'
+              observed_db1_crm_sessions: 9
+              observed_db1_app_role: crm_rehearsal_app
+              observed_db1_app_address: 192.168.27.20
+              observed_db1_application_name: bin/rails
+              observed_db2_application_processes_or_external_clients: 0
+              current_deployment: one_web_service_nine_worker_services_on_crm_ct
+              workflow_table_write_matrix: source_reviewed_first_pass_indirect_writes_pending
+              observed_active_cron_entries: 10
+              observed_active_cron_verified_on: '2026-10-15'
+              active_cron_workflows:
+                - task: incidencias:sincronizar_estados_para_clientes_expirados
+                  likely_write_targets: [incidencias]
+                  additional_effects: [external_mantis_update]
+                - task: banco_nacion:actualizar_cotizacion
+                  likely_write_targets: [monedas, cotizaciones]
+                  additional_effects: [external_banco_nacion_read]
+                - task: servicios_suscriptos:desactivar_servicios_finalizados
+                  likely_write_targets: [servicios_suscriptos]
+                - task: documentos_comerciales:aplicar_documentos_vencidos
+                  likely_write_targets: [documentos_comerciales, cuentas_corrientes, clientes]
+                  conditional_targets: [clientes]
+                - task: instalaciones:restablecer_control_automatico
+                  likely_write_targets: [instalaciones, servicios_suscriptos]
+                  conditional_targets: [solicitudes_de_reconfiguracion]
+                - task: clientes:inhabilitar_morosos
+                  likely_write_targets: [clientes, instalaciones, servicios_suscriptos]
+                  conditional_targets: [solicitudes_de_reconfiguracion]
+                - task: materialized_views:refresh+materialized_views:update_introspection_info
+                  likely_write_targets: [materialized_views_schema_materialized_views, parametros]
+                  additional_effects: [materialized_views_not_in_public_table_manifest]
+                - task: asignaciones_de_producto:cambiar_productos_a_prueba
+                  likely_write_targets: [asignaciones_de_producto, servicios_suscriptos]
+                  conditional_targets: [solicitudes_de_reconfiguracion]
+                - task: mantenimiento:eliminar_procesos_de_reconfiguracion+mantenimiento:eliminar_procesos_de_exportacion
+                  likely_write_targets: [procesos_de_reconfiguracion, procesos_de_exportacion]
+                  additional_effects: [generated_file_deletion]
+                - task: presentacion_payway:crear_presentacion
+                  likely_write_targets: [presentaciones_payway]
+                  additional_effects: [generated_file_creation]
+              indirect_writes_pending: [model_callbacks, audit_versions, database_triggers, helper_methods, web_and_worker_request_paths]
+              evidence_required: per_workflow_table_and_job_writer_matrix
+            - id: conflict_and_idempotency
+              status: guardrail_approved_details_pending
+              approved_at: '2026-10-15'
+              last_write_wins: not_approved
+              policy: workflows_remain_single_writer_until_conflict_retry_duplicate_action_and_resolution_behavior_is_tested_and_approved
+              unresolved_conflicts: fail_closed
+              evidence_required: tested_update_delete_retry_duplicate_action_and_resolution_policy
+            - id: table_scope_and_replica_identity
+              status: target_scope_approved_live_counts_reconciled_candidate_manifest_generated_table_review_pending
+              approved_at: '2026-10-15'
+              include_13_crm_associations: true
+              association_identity: ordered_pair_of_related_entity_uuids
+              excluded_tables:
+                - public.spatial_ref_sys
+                - all_12_cc_a2billing_legacy_tables
+              live_public_table_count: 152
+              live_public_tables_with_pk: 127
+              live_public_tables_without_pk: 25
+              postgis_owned_tables_excluded: 1
+              crm_application_tables: 151
+              crm_application_tables_with_pk: 126
+              target_in_scope_crm_tables: 139
+              exact_live_table_name_manifest: ../../DB_ENVIRONMENT/doc/POSTGRESQL_UUID_TABLE_SCOPE_CANDIDATE_2026-10-15.txt
+              manifest_entry_count: 139
+              manifest_status: candidate_pending_table_by_table_semantic_review_and_replica_identity_validation
+              pending: complete_table_by_table_semantic_review_and_replica_identity_eligibility_validation
+            - id: association_constraint_compatibility
+              status: test_gate_approved_tests_pending
+              approved_at: '2026-10-15'
+              production_ddl_blocked_until_tests_pass: true
+              required_test_tables: [documentos_comerciales_asociados, franquicias_usuarios, cajas_operaciones_de_caja]
+              evidence_required: automated_compatibility_tests_for_duplicate_rejection_nullability_and_directed_pairs
+            - id: sequences_and_business_numbers
+              status: guardrail_approved_sequence_inventory_verified_first_pass_business_number_evidence_recorded_full_counter_review_pending
+              approved_at: '2026-10-15'
+              globally_unique_numeric_business_values: single_writer_until_collision_safe_allocator_approved_and_tested
+              sequence_inventory:
+                observed_at_utc: '2026-10-15T04:40:59Z'
+                count: 124
+                owned_primary_id_columns: 124
+                owned_non_id_columns: 0
+                unowned_sequences: 0
+                current_sequence_values_read: false
+              reviewed_business_number_paths:
+                electronic_invoice_number: afip_last_authorized_plus_one
+                payment_receipt_number: recibos_de_pago_id
+                client_document_number: customer_tax_or_document_identifier_not_generated_invoice_number
+                customer_and_installation_numbers: random_five_digit_allocator
+              live_business_number_constraints:
+                observed_on: '2026-10-15'
+                ultimos_comprobantes_rows: 8
+                duplicate_point_of_sale_type_counter_rows: 0
+                ultimos_comprobantes_composite_unique_index_valid_and_ready: true
+                invoice_business_number_composite_unique_index: absent
+                receipt_business_number_uniqueness: enforced_by_receipt_id_primary_key_only
+                customer_number_partial_unique_index_valid_and_ready: true
+                installation_number_partial_unique_index_valid_and_ready: true
+                counter_values_read: false
+              receipt_number_write_path:
+                factory_initial_value: documento_comercial_id
+                emission_job_final_value: recibos_de_pago_id
+                explicit_database_transaction_in_emission_job: false
+              serialization:
+                application_dependency: flock_synchronize_1_2_0_file_locking_gem
+                cross_host_lock_semantics_verified: false
+                invoice_receipt_customer_and_installation_number_generation: single_writer
+              pending: complete_business_counter_and_allocator_inventory_and_verify_lock_scope
+              evidence_required: complete_workflow_allocator_inventory_and_collision_safe_policy_or_single_writer
+            - id: application_and_consumer_migration
+              status: guardrail_approved_deployment_footprint_verified_full_consumer_inventory_pending
+              approved_at: '2026-10-15'
+              uuid_canonicalization_or_numeric_compatibility_retirement_blocked_until: complete_consumer_inventory_compatible_release_and_measurable_residual_numeric_id_threshold
+              verified: deployed_crm_association_callers_searched
+              pending: complete_numeric_id_consumer_inventory_compatible_release_and_uuid_retirement_threshold
+            - id: tls_network_and_authentication
+              status: requirements_approved_implementation_details_pending
+              approved_at: '2026-10-15'
+              require_tls_identity_and_hostname_verification: true
+              require_least_privilege_roles: true
+              require_narrowly_scoped_network_rules: true
+              db2_application_exposure: requires_separate_authorization
+              evidence_required: approved_tls_identities_replication_paths_roles_firewall_scope_and_connectivity_test
+            - id: client_routing_and_read_semantics
+              status: guardrail_approved_routing_details_pending
+              approved_at: '2026-10-15'
+              application_traffic: remain_on_db1
+              peer_or_load_balancer_traffic: prohibited_until_semantics_tests_and_separate_authorization
+              evidence_required: approved_load_balancer_health_affinity_staleness_failover_and_failback_behavior
+            - id: fencing_recovery_and_rollback
+              status: guardrail_approved_runbook_pending
+              approved_at: '2026-10-15'
+              policy: fail_closed
+              ambiguous_or_partitioned_writer: must_be_fenced
+              automatic_peer_promotion: prohibited
+              peer_rejoin: requires_approved_reconciliation_or_reseed_runbook
+              evidence_required: partition_fencing_restore_reseed_and_operator_runbook
+            - id: migration_slos_and_restore
+              status: gate_approved_thresholds_and_restore_evidence_pending
+              approved_at: '2026-10-15'
+              no_production_ddl_until_thresholds_and_restore_procedure_documented: true
+              backup_policy_change_authorized: false
+              evidence_required: measurable_stop_thresholds_monitoring_exact_restore_point_and_tested_recovery
+          production_ddl_authorized: false
+          replication_activation_authorized: false
+          client_routing_changes_authorized: false
+      backup_policy:
+        status: established_and_accepted_by_operator
+        validation: tested_outside_this_project
+        additional_backup_work_in_this_scope: none
+      database_inventory:
+        observed_at_utc: '2026-10-14T20:55:06Z'
+        production_db1:
+          - name: aero_crm
+            owner: crm_owner
+            size: 12_GB
+            allow_connections: true
+          - name: aero_web
+            owner: aero_web_owner
+            size: 8998_kB
+            allow_connections: true
+          - name: iot_server
+            owner: iot_server
+            size: 12_MB
+            allow_connections: true
+          - name: postgres
+            owner: postgres
+            size: 7678_kB
+            allow_connections: true
+          - name: traccar
+            owner: traccar
+            size: 5002_MB
+            allow_connections: true
+        peer_db2_initial:
+          - name: postgres
+            owner: postgres
+            size: 7510_kB
+            allow_connections: true
+        replication_set_selection: aero_crm_only_operator_selected
+      vm_runtime:
+        power_state: running
+        onboot: false
+        guest_agent: enabled_and_responding
+        configured_ip: 192.168.24.25/24
+        configured_gateway: 192.168.24.1
+        configured_vlan: 25
+        guest_hostname_and_ip_verified: true
+        data_disk_guest_state: ext4_mounted_at_var_lib_postgresql_fstab_persistent
     internal:
       action: replace_a
       address: 192.168.27.25
@@ -76,14 +713,63 @@ services:
       address: 138.121.101.15
     ptr:
       action: unchanged
-      observed_name: database.intelisis.com.ar
+      observed_name: db1.intelisis.com.ar
       observed_address: 138.121.101.4
     legacy_nat:
       address: 138.121.101.4
       port: 5432
       destination: 192.168.25.25
-      action: retain_as_lujan_rollback_configuration
-    state: final_frozen_reconciled_gestion_db_access_verified_application_acceptance_pending
+      action: retained_but_source_guest_deleted_not_a_valid_rollback_path
+    publication:
+      state: internal_external_published_and_verified
+      primary_serials:
+        internal: 2026101402
+        external: 2026101402
+      secondary_serials:
+        internal: 2026101402
+        external: 2026101402
+      external_frozen: false
+      public_recursive_answer: 138.121.101.15
+      ttl: 300
+    client_cutover:
+      crm:
+        state: active_after_db1_tls_deployment
+        temporary_hosts_pin: removed_and_compared_with_original_backup
+        application_acceptance: internal_login_http_200_tls_verified
+        workers: all_nine_active
+        worker_database_sessions: nine_tls_verified
+        tls_mode: verify-full
+      traccar:
+        state: running_and_database_connected
+        guest_address: 192.168.25.8
+        database_target: 192.168.27.25
+        application_acceptance: database_schema_current_and_ten_jdbc_sessions_verified
+      node_red:
+        state: running_and_database_connected
+        guest_address: 192.168.25.7
+        database_name: iot_server
+        application_acceptance: post_restart_authenticated_read_only_campaign_status_http_200
+    source:
+      state: deleted_after_cutover_by_operator
+      ct: 25025
+      rollback_available: false
+    external_route_acceptance: waived_by_operator_not_verified
+    certificate:
+      state: deployed_and_served
+      subject: db1.intelisis.com.ar
+      expires: '2027-01-12'
+      sha256_fingerprint: D16A7E03A10C9D11970603AFA76B0D7602B3ED8781D1006E4C54887C23B4913C
+      postgresql_reload: passed_without_restart
+      local_chain_and_hostname_verification: passed
+      renewal:
+        manager: certbot_on_target_vm_27025
+        timer: enabled_and_active
+        dns01: restricted_rfc2136_credentials
+        deploy_hook: /etc/letsencrypt/renewal-hooks/deploy/50-postgresql-tls
+        deploy_hook_validation: chain_hostname_expiry_keypair_and_served_fingerprint
+      previous_database_hostname_certificate_removed_from_target: true
+      source_rollback_certificate_retained: false
+    state: db1_tls_deployed_all_internal_clients_verified_source_deleted_external_route_waived
 
   mantis:
     canonical_fqdn: mantis.intelisis.com.ar
@@ -107,13 +793,33 @@ services:
     publication:
       state: complete
       primary_serials:
-        internal: 2026101311
-        external: 2026101326
+        internal: 2026101402
+        external: 2026101402
       secondary_serials:
-        internal: 2026101311
-        external: 2026101326
+        internal: 2026101402
+        external: 2026101402
       backup_directory: /root/mantis-tic-cname-cutover-20261013T1910Z
-    state: cname_published_in_both_views_service_acceptance_pending
+      active_routes:
+        internal:
+          address: 10.8.0.61
+          https: 20502
+          ssh: 20503
+        external:
+          address: 138.121.101.15
+          https: 20502
+          ssh: 20503
+      legacy_paths_removed: true
+      target:
+        site: TIC
+        container: 27050
+        address: 192.168.27.50
+        state: running
+      legacy_audit:
+        lujan_router_nat: no_mantis_forwarding_rules_found
+        retired_public_address_138_121_100_7: no_destination_nat_found
+        source_guest_25050: not_confirmed_removed_by_this_audit
+      external_route_acceptance: client_ports_unreachable_from_development_workstation
+    state: tic_target_running_cname_published_legacy_forwarding_absent_external_acceptance_unverified
 
 policy:
   routeros_source_address_restrictions: none

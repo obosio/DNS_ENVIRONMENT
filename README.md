@@ -1,6 +1,6 @@
 # DNS_ENVIRONMENT
 
-Updated: Oct 13, 2026
+Updated: Oct 14, 2026
 
 **DNS infrastructure, authoritative zone reconciliation, and operational audit platform** for the primary and secondary BIND DNS services, zone replication, and split-view publication across all network and cluster boundaries.
 
@@ -21,11 +21,34 @@ This project exists to deliver managed authoritative and recursive DNS infrastru
 - Inspect and monitor live zone serial synchronization, TSIG authenticated replication, and query consistency across views.
 - Provide a clean migration path and approval boundaries for public IP reorganization and DNS cutovers.
 
-The staged DNS record changes for the Database, Gestion, and Mantis TIC
-handoff are documented in
+The Database DNS/TLS cutover and Mantis TIC CNAME cutover are live and
+reconciled with the current service state. Database internal-client acceptance
+passed; external route reachability remains waived and unverified. Mantis
+resolves to TIC in both views, with its client forwarding active on TIC and no
+Mantis forwarding found on Lujan. External client-port acceptance remains
+unverified from the available workstation. The completed and pending work is
+documented in
 [`config/tic_workload_dns_cutover_plan.yaml`](config/tic_workload_dns_cutover_plan.yaml).
-They are not live-authorized; apply a service's records only after its target
-guest and route have been verified.
+Database service lifecycle and PostgreSQL migration planning are owned by
+[DB_ENVIRONMENT](../DB_ENVIRONMENT/README.md); this project retains ownership
+of the DNS records, DNS/TLS cutover state, and authoritative verification.
+The shared Aero and Intelisis apexes now match their approved split-view
+targets and were verified on both authorities. Lujan TCP `80,443` forwarding
+targets TIC Gestion CT `27020`; unassigned/disabled customer-port mappings
+remain unchanged pending owner review.
+The approved October 14 cleanup retired the legacy `database` PTR and the
+obsolete `services`, `fileserver`, `owncloud`, and `wiki` Aero records.
+`mantis.aero.com.ar` and `gestion.aero.com.ar` remain absent. Authoritative
+NXDOMAIN was verified for these names in both views on both DNS authorities.
+The active database identity remains `db1.intelisis.com.ar`. The old
+`138.121.101.4` assignment and its dynamic `/32` route have now been removed
+from all four CORE routers; no old `5432` NAT mapping remains. PMS records were
+removed from both DNS views and its External PTR was deleted. PBX now has only
+its Internal A record (`192.168.26.6`); no External A or CORE destination NAT
+remains. Polodesalud's existing apex and PPPoE route were confirmed correct by
+the operator and left unchanged. The detailed actions and verified zone
+serials are recorded in
+[`doc/EXTERNAL_DNS_SERVICE_RECONCILIATION.md`](doc/EXTERNAL_DNS_SERVICE_RECONCILIATION.md).
 
 ## Architecture & Topology
 
