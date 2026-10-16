@@ -33,9 +33,15 @@ metadata:
     Gestion's approval remains limited to its canonical hostname. Mantis's
     approved canonical CNAME cutover to TIC is live in both views. Its TIC
     HTTPS/SSH redirects are active and no Mantis forwarding remains on Lujan.
-    Public Mantis client-port acceptance is unverified from the available
-    workstation. The separately approved shared apex DNS targets were
-    published and verified in both views on both authorities on October 14.
+    An October 16 check from this workstation connected to public TIC HTTPS
+    20502 and SSH 20503; HTTPS certificate validation passed and redirected to
+    the Mantis login page, while SSH returned an OpenSSH banner. A subsequent
+    authenticated web login using locally stored credentials reached the
+    authenticated dashboard with TLS verification enabled; no issue or
+    customer records were read or changed. The operator confirms the external
+    firewall enforces ingress access control. The separately approved shared
+    apex DNS targets were published and verified in both views on both
+    authorities on October 14.
 
 shared_apex_dns:
   status: live_verified_both_views_both_authorities

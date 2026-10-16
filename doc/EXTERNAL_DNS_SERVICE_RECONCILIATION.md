@@ -1,6 +1,46 @@
 # External DNS service reconciliation
 
-Updated: October 14, 2026
+Updated: October 16, 2026
+
+## Operator-directed status (October 16, 2026)
+
+- GPS remains on `gps.aero.com.ar` / `138.121.100.2`. The dedicated
+  environment SSH key authenticated through the new
+  `138.121.100.2:20083` -> `192.168.25.8:22` CORE mapping. Existing public GPS
+  client ports and the dedicated address were preserved; the unused public
+  TCP `8080` forward was removed on October 16 after operator authorization.
+  October 16
+  external checks returned HTTP 301 on port `80`, HTTP 200 with TLS 1.3 on
+  `443`, and HTTP 200 on `8082`; all five TCP telemetry listeners accepted
+  connections. The operator confirms GPS protocol-level ingestion has already
+  been validated, so application acceptance is recorded by operator
+  confirmation. No synthetic telemetry was sent.
+- Ollama at `192.168.27.10` is internal-only:
+  `ollama.intelisis.com.ar` resolves in the Internal view only. Public
+  resolution remains NXDOMAIN; no Ollama public address assignment, route, or
+  NAT is configured. The retired `.101.4` address is not reserved for Ollama.
+- Prestoprenda remains customer-DNS-owned. The operator confirmed that its
+  external DNS and service path are already verified; no Internal DNS record
+  or local DNS cutover is pending.
+- CEIS HTTP/HTTPS checks passed on October 16; HTTPS returned `200 OK` with a
+  valid `ceis.polodesalud.com.ar` certificate. The operator confirms CEIS was
+  and remains operational. The live CEIS destination-NAT rule was then
+  restricted to TCP `80`/`443` only; unused TCP `12321`/`12323` were removed.
+  UDP `12321` is also unused and is not published or tested.
+- Mantis public TCP `20502` and `20503` connected from this workstation on
+  October 16. HTTPS certificate validation passed and `HEAD /` redirected to
+  `/login_page.php`; SSH returned an OpenSSH banner. This verifies transport
+  reachability from this vantage. A subsequent authenticated web login using
+  locally stored credentials reached `/my_view_page.php` with TLS verification
+  enabled. No issue or customer records were read or changed. The operator
+  confirms all ingress access control is enforced by the external firewall.
+- The deprecated `groupware.aero.com.ar` A record was removed from the Internal
+  `aero.com.ar` zone on October 16. Both Internal authorities now return
+  authoritative NXDOMAIN at SOA `2026101601`. Public resolvers already returned
+  NXDOMAIN before the update, so there was no External owner record to remove;
+  the External SOA remains `2026101402`. The `mail.aero.com.ar` record still
+  resolves to the approved Mailcow service in both views, and the guest at
+  `192.168.25.40` was not changed.
 
 ## Scope and evidence
 
@@ -257,15 +297,23 @@ serials are both `2026101402` on the primary and secondary.
 The live RouterOS NAT audit found TIC rules for `20502` to CT `27050`
 (`192.168.27.50:443`) and `20503` to `192.168.27.50:22` on both the internal
 and public TIC addresses. No Mantis NAT rule was found on Lujan, including no
-legacy `21150` or `.100.7:443` forwarding. The public Mantis ports were not
-reachable from the available workstation; external client-path acceptance is
-therefore unverified.
+legacy `21150` or `.100.7:443` forwarding. On October 16, public TCP
+connectivity succeeded from this workstation on both ports; HTTPS certificate
+validation passed and the server redirected to its login page, while SSH
+returned an OpenSSH banner. A subsequent authenticated web login using locally
+stored credentials reached `/my_view_page.php` with TLS verification enabled.
+No issue or customer records were read or changed. The operator confirms all
+ingress access control is enforced by the external firewall.
 
-All four CORE routers now expose SSH `28022`, Winbox `28291`, API `28728`, and
-API-SSL `28729`, verified through authenticated RouterOS API checks. The
-fleet-wide normalization policy targets these ports, but routers outside CORE
-have not yet been validated. TIC has no API-SSL certificate configured, so
-`28729` is configured but TLS service usability remains unverified.
+On October 16, authenticated RouterOS API checks verified SSH `28022`, Winbox
+`28291`, API `28728`, and API-SSL `28729` on all 199 reachable routers in the
+214-router inventory, including all six CORE routers and four CORE switches.
+Fifteen routers remain unverified because their API connections failed; no
+management-port changes were made to those devices. `PDS-Vistalba` required
+its existing `Router access` input rule to be updated to allow SSH `28022`;
+the rule's scope was preserved and TCP `22` was not changed. TIC has no
+API-SSL certificate configured, so `28729` is configured but TLS service
+usability remains unverified.
 
 The three newly added addresses were verified as `/32` assignments on their
 respective router loopback interfaces. This DNS reconciliation does not
@@ -316,16 +364,18 @@ review.
 | Public address | Primary DNS identity or role | Live router finding | Disposition |
 | --- | --- | --- | --- |
 | `138.121.100.1` | Primary authoritative DNS | TCP/UDP 53 to `192.168.25.100` | Dedicated exception |
-| `138.121.100.2` | `gps.aero.com.ar` | Nine TCP NAT mappings to `192.168.25.8`; `8080` is operator-confirmed not required and refuses connections | Retain dedicated public IP; complete application checks on the eight required ports; leave the extra NAT mapping unchanged pending separate approval |
+| `138.121.100.2` | `gps.aero.com.ar` | Eight GPS client-port NAT mappings plus SSH `20083` -> `.25.8:22`; dedicated-key SSH login passed; unused TCP `8080` forward removed October 16 | Retain dedicated public IP and required client ports; protocol-level ingestion accepted by operator confirmation |
 | `138.121.100.3` | PBX is Internal-only; no External A | Centro PBX VM `26006` is running at `.26.6`; no public assignment, route, or NAT on audited CORE routers | Preserve Internal-only; do not add External DNS or NAT |
 | `138.121.100.4` | `aero.com.ar`, `intelisis.com.ar` | TCP 80/443 to TIC Gestion `192.168.27.20`; customer ranges `10000-10474` | Preserve; candidate shared standard-port web proxy after validation; customer mappings pending owner review |
 | `138.121.100.5` | Multi-tenant production Mailcow | Mail and HTTPS ports to `192.168.25.40` | Preserve existing service/IP; canonical mail host is `mail.intelisis.com.ar` |
-| `138.121.100.7` | Retired address; no Mantis compatibility route | No destination NAT observed | Keep retired; do not recreate without approval |
+| `138.121.100.6` | `iot.intelisis.com.ar` External A/PTR; Internal A remains `192.168.25.7` | TCP 80 -> guest 1880; HTTPS 443, MQTT TLS 8883, and SSH high port 20073 verified | Forced production renewal, DNS-01 grant, deployment, and HTTPS/MQTT restart verification passed October 16; public SSH 8922 has been retired |
+| `138.121.100.7` | Prestoprenda public endpoint; DNS externally administered | Lujan assignment and TCP 22/80/443 NAT to `192.168.25.9` | Retain its own public IP; no Internal DNS publication |
+| `138.121.100.8` | `ceis.polodesalud.com.ar` External A/PTR; Internal A remains `192.168.25.151` | TCP 80/443 only are forwarded; HTTPS certificate is valid; operator confirms CEIS remains operational | Published October 15; all additional CEIS forwards were removed October 16 |
 | `138.121.100.15` | WEB and Lujan router A records; Mantis now targets TIC | WEB 20602 to `.25.60:443` and 20603 to `.25.60:22`; no Mantis NAT observed | Active WEB endpoint; no Mantis forwarding |
-| `138.121.101.2` | Prestoprenda, externally administered; no local External A/PTR observed | Active destination NAT observed | Retain its own externally managed public IP; do not publish Internal DNS here |
-| `138.121.101.3` | `iot.intelisis.com.ar` | TCP `80`, `8883`, and `8922` to `192.168.25.7`; TCP `443` to `192.168.25.7:8123` | Retain this dedicated public service IP and all current public application/protocol paths. Stage only private admin SSH at Lujan TCP `20073` -> `192.168.25.7:8922`; keep the current SSH path until allowlist, separate admin DNS, and end-to-end verification are accepted. |
+| `138.121.101.2` | No local External A/PTR observed; not the current Prestoprenda endpoint | No current Lujan address assignment, route, or NAT observed | Retired from the current service path; do not reassign without separate allocation confirmation |
+| `138.121.101.3` | No External A or PTR; former IoT endpoint | No assignment, `/32` route, or NAT on four audited CORE routers; External A/PTR now use `.100.6` | Retired as the IoT endpoint; confirm allocation before reuse. The private admin SSH rule is active at `.100.6:20073` -> `192.168.25.7:8922` using the existing `iot.intelisis.com.ar` DNS identity; the old public `8922` SSH forward has been removed while MQTT on `8883` remains enabled. |
 | `138.121.101.4` | No A or PTR; legacy Database DNS retired October 14 | Address removed from Lujan loopback; `/32` withdrawn from all four CORE routers; no NAT | Retired; do not reuse without provider-allocation confirmation |
-| `138.121.101.6` | `ceis.polodesalud.com.ar` | TCP 80/443/12321/12323 to `192.168.25.151` | Retain its own IP until the planned shared reverse-proxy web cutover is accepted |
+| `138.121.101.6` | No External A or PTR; former CEIS endpoint | No assignment, `/32` route, or NAT on four audited CORE routers; External A/PTR now use `.100.8` | Retired as the CEIS endpoint; confirm allocation before reuse |
 | `138.121.101.7` | PMS retired; no A or PTR | No assignment, route, or NAT on the audited CORE routers | Keep retired; do not republish or reuse without separate review |
 | `138.121.101.8` | `development.intelisis.com.ar` | Only TCP 20022 to SSH on `192.168.27.15` | Private-use administration confirmed; preserve the current path until a verified TIC site-router high-port replacement is accepted. Retire `.101.8` only after separate approval. |
 | `138.121.101.242` | `polodesalud.com.ar` apex | Routed through Lujan PPPoE-in `backbone-16` via `.102.194`; no local assignment or NAT | External customer-owned IP; preserve address, DNS, and route |
@@ -339,10 +389,17 @@ The October 15 target keeps the site `.15` addresses for private GUI/SSH and
 other approved high-port access, not as a replacement for public-standard web
 ingress. Use existing `138.121.100.4` as the shared `80`/`443` proxy candidate
 only after CRM routing and proxy behavior are validated. GPS keeps its own IP;
-CEIS keeps its own IP until its planned proxy cutover; Prestoprenda remains
-externally administered with no Internal DNS publication; and the
-customer-owned Polodesalud address remains unchanged. No live records or NAT
-were changed by this target classification.
+CEIS now uses `.100.8` and remains on its dedicated IP until application
+acceptance and a later proxy cutover; IoT uses `.100.6` with firmware HTTP and
+HTTPS/MQTT TLS and high-port SSH verified. GPS also uses a verified
+high-port administrative SSH path without changing its public client ports.
+Prestoprenda remains externally administered with no Internal DNS publication;
+its external path is accepted as verified by the operator. Ollama is
+Internal-only and has no public DNS or router exposure. The customer-owned
+Polodesalud address remains unchanged. The IoT and CEIS External A records were
+published first; their PTRs were moved to
+`.100.6` and `.100.8` on October 15 after separate approval. Internal IoT DNS
+remains `.25.7`; its NAT is documented below.
 
 ## Alias and dependency findings
 
@@ -378,26 +435,40 @@ were changed by this target classification.
   to Lujan router `10.8.0.21`. Both router views forward TCP `20602` to
   `192.168.25.60:443` and TCP `20603` to `192.168.25.60:22`; source policy is
   owned by the external firewall. HTTPS is served by the replacement WEB VM.
-- `138.121.101.2` has active Prestoprenda NAT but no A or PTR in the inspected
-  zones. The operator confirmed the service is externally resolved and
-  administered, must retain its own public IP, and must not receive Internal
-  DNS publication from this environment.
-- IoT's public service identity remains `iot.intelisis.com.ar` on
-  `138.121.101.3`; it is not repointed to the Lujan router. A separate
-  `iot-admin.intelisis.com.ar` CNAME to `lujan.intelisis.com.ar` is only a
-  proposal for restricted SSH administration and is not published. The staged
-  `20073` -> guest `8922` path remains disabled until an administrative
-  allowlist, both-view DNS, and end-to-end access are accepted. Retain the
-  existing `.101.3:8922` path until then.
-- There is an unresolved IoT firmware-route discrepancy: the router inventory
-  records public TCP `80` forwarding to `.25.7`, while IOT-SERVER's Node-RED
-  firmware URL builder uses `orchestrator.firmware_base_url` and falls back to
-  HTTP port `1880`. The effective database setting is not established by the
-  repository evidence, and the observed NAT summary does not establish whether
-  public `80` is translated to guest `80` or `1880`. Before changing any public
-  IoT service or IP path, verify the live NAT destination port, guest listeners,
-  effective database setting, and a generated firmware URL. The public-IP and
-  other application-port treatment is unchanged by the private SSH proposal.
+- `138.121.101.2` has no A or PTR in the inspected zones and no current Lujan
+  address assignment, route, or NAT. Prestoprenda's active endpoint is
+  `138.121.100.7`; its DNS is externally administered and the operator
+  confirmed its external service path is verified. Do not add Internal DNS
+  publication.
+- IoT's public service identity `iot.intelisis.com.ar` resolves externally and
+  in reverse DNS to `138.121.100.6`; its Internal A remains `192.168.25.7`.
+  The former `.101.3` address has no A, PTR, assignment, route, or NAT. Public
+  TCP `80` maps to guest `1880`, and the effective firmware URL is
+  `http://iot.intelisis.com.ar/endpoint/firmware`; a capped public artifact GET
+  returned HTTP 200. HTTPS `443` and MQTT TLS `8883` present the valid IoT
+  certificate through January 13, 2027. The fail-closed heartbeat-auth fix is
+  deployed; unauthenticated command, admin, and heartbeat probes returned 401.
+  The dedicated IoT-local Home Assistant app `local_iot_certbot_dns` is
+  installed, started in production mode, and configured to check renewals daily
+  using DNS-01/RFC2136. On October 16, the operator approved a forced
+  production renewal. Certbot issued the replacement through the narrowly
+  scoped challenge grant; the protected deploy hook installed it to `/ssl`
+  and requested Home Assistant and Mosquitto restarts. Both restart requests
+  succeeded. The renewed certificate fingerprint matches the deployed
+  certificate and the live HTTPS and MQTT certificates. Public HTTPS returned
+  HTTP 200; MQTT TLS hostname and chain verification passed. The External
+  `intelisis.com.ar` SOA serial is `2026101522` on both authorities, and public
+  resolvers show no remaining challenge TXT. A prior staging dry-run against
+  the production lineage failed because the staging ACME server returned a
+  deactivated authorization with an already-valid challenge; the approved real
+  production renewal then completed successfully. On October 16, 2026, the
+  dedicated SSH key authenticated through both the existing `.100.6:8922`
+  path and the new `.100.6:20073` -> guest `8922` path. The external firewall
+  owner confirmed the source policy. Both paths use the existing
+  `iot.intelisis.com.ar` DNS identity; do not add a separate administrative
+  hostname or change service DNS. After successful acceptance, the public
+  `8922` SSH forward was removed while MQTT on `8883` remained enabled. No
+  RouterOS source-address restriction is planned.
 
 ## Resulting migration order
 
@@ -416,16 +487,17 @@ were changed by this target classification.
    verified through both public resolvers, and the redundant hourly `acme.sh`
    cron entry was disabled while retaining its recovery files. Certificate
    renewal therefore no longer requires public TCP 80.
-5. Retain GPS on its own public IP and client ports. Retain CEIS on its current
-   IP until its planned shared reverse-proxy web cutover is validated. Do not
-   activate or migrate Projects while it is powered off and unresolved.
+5. Retain GPS on its own public IP and client ports. CEIS now uses `.100.8`;
+   only TCP `80`/`443` are forwarded; all additional CEIS forwards were
+   removed as unused. Its later planned shared reverse-proxy web cutover is a
+   separate decision. Do not activate or migrate Projects while
+   it is powered off and unresolved.
 6. Move Development's private SSH path to the TIC site-router high-port
-   endpoint only after target/listener/access-policy verification. Keep IoT's
-   public IP and application/protocol ports; stage only its private SSH path
-   on Lujan TCP `20073` -> guest `8922` after allowlist, DNS, and end-to-end
-   acceptance. Resolve the firmware HTTP `80`/`1880` discrepancy before any
-   public IoT path change. PMS and `.101.4` are retired; preserve the
-   customer-owned Polodesalud IP and route.
+   endpoint only after target/listener/access-policy verification. IoT's
+   production Certbot app, scoped DNS-01/RFC2136 grant, production issuance,
+   deployment, certificate verification, and high-port SSH path are complete;
+   its retired public `8922` forward remains closed. PMS and `.101.4` are
+   retired; preserve the customer-owned Polodesalud IP and route.
 
 No address is considered available solely because a forward or reverse record
 is absent.

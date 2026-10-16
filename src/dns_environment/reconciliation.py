@@ -13,6 +13,7 @@ DISPOSITIONS = {
     "preserve_pending_dedicated_cutover",
     "active_shared_endpoint",
     "retirement_pending",
+    "retired",
 }
 ACCESS_CLASSES = {
     "public_standard_service",

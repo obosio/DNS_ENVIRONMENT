@@ -1,6 +1,6 @@
 # DNS_ENVIRONMENT
 
-Updated: Oct 14, 2026
+Updated: Oct 16, 2026
 
 **DNS infrastructure, authoritative zone reconciliation, and operational audit platform** for the primary and secondary BIND DNS services, zone replication, and split-view publication across all network and cluster boundaries.
 
@@ -25,9 +25,12 @@ The Database DNS/TLS cutover and Mantis TIC CNAME cutover are live and
 reconciled with the current service state. Database internal-client acceptance
 passed; external route reachability remains waived and unverified. Mantis
 resolves to TIC in both views, with its client forwarding active on TIC and no
-Mantis forwarding found on Lujan. External client-port acceptance remains
-unverified from the available workstation. The completed and pending work is
-documented in
+Mantis forwarding found on Lujan. October 16 checks from this workstation
+reached its HTTPS login redirect and SSH banner; a subsequent authenticated
+web login reached the dashboard with TLS verification enabled. No issue or
+customer records were read or changed. The operator confirms all ingress
+access control is enforced by the external firewall. The completed
+and pending work is documented in
 [`config/tic_workload_dns_cutover_plan.yaml`](config/tic_workload_dns_cutover_plan.yaml).
 Database service lifecycle and PostgreSQL migration planning are owned by
 [DB_ENVIRONMENT](../DB_ENVIRONMENT/README.md); this project retains ownership
@@ -40,6 +43,12 @@ The approved October 14 cleanup retired the legacy `database` PTR and the
 obsolete `services`, `fileserver`, `owncloud`, and `wiki` Aero records.
 `mantis.aero.com.ar` and `gestion.aero.com.ar` remain absent. Authoritative
 NXDOMAIN was verified for these names in both views on both DNS authorities.
+On October 16, the deprecated `groupware.aero.com.ar` Internal A record was
+removed and authoritative NXDOMAIN verified on both Internal authorities at
+SOA `2026101601`. Public resolvers already returned NXDOMAIN, so the External
+zone was left unchanged. The production Mailcow identity
+`mail.aero.com.ar` still resolves to the approved mail service in both views;
+the guest at `192.168.25.40` was not changed.
 The active database identity remains `db1.intelisis.com.ar`. The old
 `138.121.101.4` assignment and its dynamic `/32` route have now been removed
 from all four CORE routers; no old `5432` NAT mapping remains. PMS records were
@@ -49,6 +58,35 @@ remains. Polodesalud's existing apex and PPPoE route were confirmed correct by
 the operator and left unchanged. The detailed actions and verified zone
 serials are recorded in
 [`doc/EXTERNAL_DNS_SERVICE_RECONCILIATION.md`](doc/EXTERNAL_DNS_SERVICE_RECONCILIATION.md).
+
+On October 15, the External A record for `iot.intelisis.com.ar` was published
+at `138.121.100.6`, and `ceis.polodesalud.com.ar` was published at
+`138.121.100.8`. IoT firmware HTTP and HTTPS/MQTT TLS endpoints are now
+verified. On October 16, the operator approved a forced production renewal.
+The dedicated IoT-local Home Assistant Certbot app renewed the certificate
+through DNS-01/RFC2136, deployed it to Home Assistant OS `/ssl`, and restarted
+Home Assistant and Mosquitto. The new certificate fingerprint matches the
+deployed files and the certificates served by public HTTPS and MQTT TLS;
+hostname and chain checks passed, HTTPS returned 200, and both public DNS
+resolvers show no remaining challenge TXT record. The External
+`intelisis.com.ar` SOA serial is `2026101522` on both authorities. The staging
+dry-run issue against the production lineage did not recur during the real
+production renewal. The dedicated IoT administrative SSH path on TCP `20073` is also verified;
+the retired public TCP `8922` SSH forward remains closed while MQTT `8883`
+stays enabled. Keep the HTTP-01 add-on stopped. CEIS remains operational and
+its public destination-NAT rule is limited to TCP `80`/`443`; unused TCP
+`12321`/`12323` and UDP `12321` are not published.
+Internal IoT DNS remains `192.168.25.7`; its External PTR now matches `.100.6`,
+and the former `.101.3` PTR was removed.
+
+On October 16, GPS administration was moved to the high-port path
+`138.121.100.2:20083` -> `192.168.25.8:22`; the dedicated environment key
+authenticated successfully. GPS remains on its own public IP and client ports.
+Ollama is a test service published only in Internal DNS as
+`ollama.intelisis.com.ar` -> `192.168.27.10`; public DNS remains NXDOMAIN and
+no public Ollama address, route, or NAT is configured. Prestoprenda remains
+customer-DNS-owned; the operator confirmed its external path is already
+verified, so no Internal record or local DNS cutover is pending.
 
 ## Architecture & Topology
 
@@ -70,6 +108,11 @@ remain publicly unavailable until its authoritative zone is correctly served
 there; internal pro3d mail and groupware DNS records were also removed.
 
 ## Tooling & Inspection
+
+`config/external_dns_reconciliation.yaml` is the canonical DNS-owned
+reconciliation ledger. MIKROTIK-MANAGER validates its router-owned
+destination-NAT registry independently; it does not maintain a second copy of
+this DNS reconciliation data.
 
 A Python CLI tool (`dns-environment`) provides deterministic validation of the reconciliation ledger and live DNS inspection:
 

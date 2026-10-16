@@ -1,6 +1,6 @@
 metadata:
   version: 1
-  observed_at: '2026-10-15'
+  observed_at: '2026-10-16'
   dns_primary: ns1.intelisis.com.ar
   dns_container: 25100
   description: Reconciliation of External DNS public identities with live CORE-router state.
@@ -17,17 +17,17 @@ metadata:
   counts:
     forward_a_records: 24
     unique_forward_addresses: 14
-    cname_records: 18
+    cname_records: 19
     mx_records: 3
     ptr_records: 7
     reconciled_public_addresses: 20
 
 zone_serials:
   aero.com.ar: 2026101402
-  intelisis.com.ar: 2026101414
+  intelisis.com.ar: 2026101522
   polodesalud.com.ar: 2026101104
-  100.121.138.in-addr.arpa: 1503626321
-  101.121.138.in-addr.arpa: 2026101402
+  100.121.138.in-addr.arpa: 1503626322
+  101.121.138.in-addr.arpa: 2026101501
   102.121.138.in-addr.arpa: 1513198928
   103.121.138.in-addr.arpa: 1513198889
 
@@ -55,7 +55,7 @@ services:
     ptr_name: null
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback
-    nat_summary: Live TCP NAT rule maps ports 80, 443, 5005, 5027, 5055, 5056, 5144, 8080, and 8082 to 192.168.25.8; operator confirmed 8080 is not required, and it refused TCP connections on October 15
+    nat_summary: TCP ports 80, 443, 8082, 5005, 5027, 5055, 5056, and 5144 to 192.168.25.8; SSH 138.121.100.2:20083 to 192.168.25.8:22
     role: gps_application
     access_class: public_standard_service
     high_port_migration_eligible: false
@@ -63,9 +63,10 @@ services:
     migration_eligible: false
     blockers:
       - Retain this dedicated public IP because GPS is a public service with multiple standard/fixed client ports.
-      - Operator confirmed TCP 8080 is not required. External TCP checks on October 15 connected to 80, 443, 5005, 5027, 5055, 5056, 5144, and 8082; 8080 was refused both publicly and directly at 192.168.25.8. The live NAT rule still includes 8080; do not change it without separate authorization.
-      - External HEAD checks returned HTTP 301 on port 80, HTTP 200 with valid TLS on 443, and HTTP 200 on 8082. The T55 (5005), Teltonika (5027), OsmAnd (5055), Easytrack (5056), and OwnTracks (5144) TCP listeners accept connections; protocol-level device ingestion and end-to-end acceptance remain pending.
-      - Do not send synthetic telemetry to production protocol listeners. Complete protocol acceptance with a designated test device or service-owner confirmation; do not apply workload high-port translation or generic shared web ingress.
+      - The operator confirmed TCP 8080 is not required and authorized its removal on October 16. It was removed from the live public NAT rule; the other eight client ports remain configured.
+      - On October 16, a dedicated GPS environment SSH key authenticated successfully through TCP 20083; CORE-ROUTER-LUJAN forwards this port to guest SSH 22, with no RouterOS source-address restriction.
+      - October 16 external HEAD checks returned HTTP 301 on port 80, HTTP 200 with valid TLS 1.3 on 443, and HTTP 200 on 8082. TCP listeners on T55 (5005), Teltonika (5027), OsmAnd (5055), Easytrack (5056), and OwnTracks (5144) accepted connections.
+      - On October 16, the operator confirmed GPS protocol-level ingestion has already been validated. Application acceptance is recorded by operator confirmation; no synthetic telemetry was sent. Do not apply workload high-port translation or generic shared web ingress.
 
   - public_address: 138.121.100.3
     dns_a_names: []
@@ -119,20 +120,22 @@ services:
   - public_address: 138.121.100.6
     dns_a_names:
       - iot.intelisis.com.ar
-    ptr_name: null
+    ptr_name: iot.intelisis.com.ar
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback; TIC, Centro, and Cordoba route this /32 through their Lujan backhauls
-    nat_summary: TCP ports 80, 8883, and 8922 to 192.168.25.7; TCP 443 to 192.168.25.7 port 8123
+    nat_summary: Live forwards are TCP 80 to 192.168.25.7:1880, TCP 443 to 192.168.25.7:8123, and TCP 8883/8922 to 192.168.25.7 on the same ports; public TCP 1880 is not exposed.
     role: iot_application
     access_class: public_native_protocol
     high_port_migration_eligible: false
     disposition: dedicated_exception
     migration_eligible: false
     blockers:
-      - External A was published as 138.121.100.6 on October 15; Internal A remains 192.168.25.7.
-      - TCP 80 is refused by guest port 80 while guest port 1880 accepts connections; public TCP 443 fails TLS negotiation, and TCP 8883 presents an expired certificate. Complete service remediation and acceptance.
-      - The enabled TCP 8922 forward is administrative and remains separate from the proposed disabled TCP 20073 path on .100.15.
-      - PTR for 138.121.100.6 is absent; the prior 138.121.101.3 PTR still names this service pending separate reverse-DNS approval.
+      - External A and PTR resolve to 138.121.100.6; Internal A remains 192.168.25.7. The former .101.3 has no assignment, route, NAT, A, or PTR.
+      - Public TCP 80 maps to Node-RED guest port 1880. The effective orchestrator.firmware_base_url is http://iot.intelisis.com.ar/endpoint/firmware, and a capped public firmware GET returned HTTP 200. Node-RED v22.1.0 runs with ssl=false and HTTP-node Basic Auth disabled; endpoint-specific authentication remains enabled.
+      - PM_ADMIN_TOKEN, PM_DEVICE_SECRET, and PM_TRACCAR_INGEST_TOKEN are present in the protected runtime secrets file; unauthenticated device-command, admin, and heartbeat probes returned HTTP 401. The heartbeat helper's missing-token bypass is fixed and deployed.
+      - Public HTTPS 443 and MQTT TLS 8883 present the renewed production certificate issued October 15, 2026, expiring January 13, 2027. The local Home Assistant app local_iot_certbot_dns is started in production mode with boot mode auto. On October 16, the operator approved a forced production renewal. The app completed DNS-01/RFC2136 issuance, deployed the certificate to /ssl, and successfully requested Home Assistant and Mosquitto restarts. The deployed and served HTTPS/MQTT certificate fingerprints match, hostname and chain checks pass, and HTTPS returns HTTP 200. The External intelisis.com.ar SOA serial is 2026101522 on primary and secondary; public resolvers show no leftover challenge TXT. Keep core_letsencrypt stopped on HTTP-01.
+      - On October 16, 2026, the dedicated IoT-admin public key authenticated through both the former .100.6:8922 path and the new .100.6:20073 high-port path. The external firewall owner confirmed the TCP 20073 source policy; the new NAT rule is active and uses the existing iot.intelisis.com.ar hostname, with no DNS change. After high-port acceptance, the public 8922 forward was removed while MQTT TCP 8883 remained enabled. RouterOS source filtering is not planned.
+      - Runtime secrets are owner-only; configured Node-RED static-auth password was rotated without changing other add-on options.
 
   - public_address: 138.121.100.7
     dns_a_names: []
@@ -146,16 +149,16 @@ services:
     disposition: dedicated_exception
     migration_eligible: false
     blockers:
-      - Keep external-owner DNS control and confirm external publication before retiring 138.121.101.2.
+      - The operator confirmed the customer-managed external DNS and service path are verified at 138.121.100.7; no local DNS migration is pending.
       - Keep this endpoint external-only; do not add Internal DNS publication.
 
   - public_address: 138.121.100.8
     dns_a_names:
       - ceis.polodesalud.com.ar
-    ptr_name: null
+    ptr_name: ceis.polodesalud.com.ar
     observed_site: lujan
     router_assignment: CORE-ROUTER-LUJAN loopback; TIC, Centro, and Cordoba route this /32 through their Lujan backhauls
-    nat_summary: TCP ports 80, 443, 12321, and 12323 to 192.168.25.151
+    nat_summary: TCP ports 80 and 443 only to 192.168.25.151
     role: ceis_web_application
     access_class: public_standard_service
     high_port_migration_eligible: false
@@ -163,8 +166,10 @@ services:
     migration_eligible: false
     blockers:
       - External A was published as 138.121.100.8 on October 15; Internal A remains 192.168.25.151.
-      - TCP ports 80, 443, 12321, and 12323 accept connections on the target; HTTPS presents a valid certificate for ceis.polodesalud.com.ar. Application-level and required UDP 12321 acceptance remain pending.
-      - PTR for 138.121.100.8 is absent; the prior 138.121.101.6 PTR still names this service pending separate reverse-DNS approval.
+      - The operator confirms CEIS was and remains operational; application acceptance is accepted on that basis. October 16 checks verified HTTP/HTTPS and a valid ceis.polodesalud.com.ar certificate.
+      - On October 16, the live CEIS destination-NAT rule was restricted to TCP 80 and 443 only; TCP 12321 and 12323 were removed as unused. The checked-in CORE export now matches. No other CEIS forwarding is authorized.
+      - The operator confirms UDP 12321 has no use. Do not publish or test it; no UDP rule is present.
+      - External reverse DNS now maps 138.121.100.8 to ceis.polodesalud.com.ar; the old .101.6 PTR was removed.
 
   - public_address: 138.121.100.15
     dns_a_names:
@@ -183,50 +188,49 @@ services:
       - Preserve canonical endpoint ports, exact forward rules, local TLS termination, and scoped DNS-01 renewal.
 
   - public_address: 138.121.101.3
-    dns_a_names:
-      - iot.intelisis.com.ar
-    ptr_name: iot.intelisis.com.ar
+    dns_a_names: []
+    ptr_name: null
     observed_site: lujan
     router_assignment: No address assignment or /32 route found on the four audited CORE routers on October 15; routes now use 138.121.100.6
     nat_summary: No matching NAT rule found on the four audited CORE routers; the External A now points to 138.121.100.6
-    role: retired_iot_public_endpoint_pending_ptr_cleanup
+    role: retired_iot_public_endpoint
     access_class: retired
     high_port_migration_eligible: false
     disposition: retirement_pending
     migration_eligible: false
     blockers:
       - The IoT External A moved to 138.121.100.6 on October 15. This prior address has no CORE assignment, route, or NAT and is no longer a rollback endpoint.
-      - Its PTR still points to iot.intelisis.com.ar; remove or reassign that PTR only after explicit reverse-DNS approval.
+      - Its PTR was removed on October 15 after approval; confirm provider allocation before considering the address reusable.
 
   - public_address: 138.121.101.4
     dns_a_names: []
     ptr_name: null
     observed_site: lujan
     router_assignment: Removed from CORE-ROUTER-LUJAN loopback; no assignment or /32 route remains on the four audited CORE routers
-    nat_summary: No current destination NAT; address was removed from the four audited CORE routers and is selected for a future Ollama endpoint
-    role: ollama_selected_public_address_pending_reactivation
-    access_class: public_native_protocol
+    nat_summary: No destination NAT or public Ollama endpoint; the address remains retired after Database service retirement
+    role: retired_public_address
+    access_class: retired
     high_port_migration_eligible: false
-    disposition: preserve_pending_dedicated_cutover
-    migration_eligible: conditional
+    disposition: retired
+    migration_eligible: false
     blockers:
-      - Operator selected this address for Ollama; verify it remains available for reactivation and restore its Lujan loopback assignment and /32 route before DNS/NAT publication.
-      - Keep Ollama DNS unpublished and planned TCP 11434 NAT disabled until TLS termination, application authentication, routing, and external reachability are verified.
+      - Ollama is an internal-only test service at 192.168.27.10; it is published only in the Internal DNS view and must not receive public DNS, address assignment, route, or NAT.
+      - Do not reassign this retired public address without separate provider-allocation confirmation and operator approval.
 
   - public_address: 138.121.101.6
     dns_a_names: []
-    ptr_name: ceis.polodesalud.com.ar
+    ptr_name: null
     observed_site: lujan
     router_assignment: No address assignment or /32 route found on the four audited CORE routers on October 15; routes now use 138.121.100.8
     nat_summary: No matching NAT rule found on the four audited CORE routers; the External A now points to 138.121.100.8
-    role: retired_ceis_public_endpoint_pending_ptr_cleanup
+    role: retired_ceis_public_endpoint
     access_class: retired
     high_port_migration_eligible: false
     disposition: retirement_pending
     migration_eligible: false
     blockers:
       - The CEIS External A moved to 138.121.100.8 on October 15; this prior address has no CORE assignment, route, or NAT and is no longer a rollback endpoint.
-      - Its PTR still points to ceis.polodesalud.com.ar; remove or reassign that PTR only after explicit reverse-DNS approval.
+      - Its PTR was removed on October 15 after approval; confirm provider allocation before considering the address reusable.
 
   - public_address: 138.121.101.7
     dns_a_names: []
@@ -403,56 +407,62 @@ additional_findings:
   - pms.polodesalud.com.ar returns NXDOMAIN in both views and has no External PTR following the approved retirement. pbx.aero.com.ar remains A 192.168.26.6 in Internal and is absent from External; no PBX destination NAT exists on the four audited CORE routers.
   - mantis.intelisis.com.ar is a CNAME to tic.intelisis.com.ar in both DNS views; its External target resolves to 138.121.101.15 and its Internal target resolves to 10.8.0.61. TIC forwards ports 20502/20503 to CT 27050; no Mantis forwarding was found on Lujan.
   - Mantis is a private-use application that intentionally remains reachable through the public network at TIC ports 20502/20503; the private audience is distinct from the public access path.
+  - October 16 public Mantis checks from this workstation connected to TCP 20502 and 20503. HTTPS certificate validation passed and HEAD / redirected to /login_page.php; SSH returned an OpenSSH banner. A subsequent authenticated web login using the locally stored Mantis credentials reached /my_view_page.php with TLS verification enabled. No issue or customer records were read or changed. The operator confirms all ingress access control is enforced by the external firewall.
   - web.intelisis.com.ar and lujan.intelisis.com.ar are active shared workload endpoints on 138.121.100.15.
   - gestion.intelisis.com.ar is a CNAME to tic.intelisis.com.ar in both views; the TIC router A records are 10.8.0.61 Internal and 138.121.101.15 External. gestion.aero.com.ar is absent from both views.
   - db1.intelisis.com.ar is published through TIC at 138.121.101.15; legacy database.intelisis.com.ar and its former 138.121.101.4 PTR are retired. Source CT 25025 is deleted, no old :5432 NAT remains, and 138.121.101.4/32 has been removed from Lujan and withdrawn from all four CORE routers.
   - lujan.intelisis.com.ar, tic.intelisis.com.ar, centro.intelisis.com.ar, and cordoba.intelisis.com.ar identify the public addresses assigned to their respective CORE edge routers.
-  - 138.121.101.2 has active Prestoprenda destination NAT but no A or PTR in the inspected External zones.
+  - 138.121.101.2 has no A or PTR in the inspected External zones and no current Lujan address assignment, route, or NAT; Prestoprenda's active assignment and TCP 22/80/443 NAT are on 138.121.100.7.
   - Operator direction October 15: Prestoprenda is externally resolved and administered, must retain its own public IP, and must not receive Internal DNS publication from this environment.
   - Operator direction October 15: keep Mailcow multi-tenant on its existing service/address, make mail.intelisis.com.ar the canonical host, and use CNAMEs for compatible service-host aliases. Keep each mail domain apex's MX/TXT records instead of making apexes CNAMEs; have MX point directly to the canonical mail host.
   - 45.238.8.15 now has an External A record for cordoba.intelisis.com.ar; other addresses in 45.238.8.0/22 were not audited here.
   - DNS absence is not evidence that an address is unallocated.
-  - Operator direction October 15: S3 is private and is staged for high-port NAT; four TIC mappings remain planned and disabled. Ollama will use operator-selected 138.121.101.4, subject to address reactivation, route, TLS, and authentication verification; 138.121.101.3 remains assigned to IoT. Netmgr's External CNAME to lujan.intelisis.com.ar is already documented as published. LTS and groupware identities are deprecated; groupware.aero.com.ar retirement remains pending authoritative DNS execution and verification. DNS retirement does not authorize deleting LXC 25004.
+  - October 16 verification: Ollama at 192.168.27.10 is published as an A record only in the Internal intelisis.com.ar view; public DNS returns NXDOMAIN, and no Ollama address assignment, route, or NAT is configured.
+  - Operator direction October 16: Prestoprenda remains customer-DNS-owned; its external service path has been accepted as verified by the operator. Keep it absent from Internal DNS and do not reopen the cutover.
+  - Operator direction October 15: Cordoba S3 GUI publication is active at s3-cor.intelisis.com.ar, a CNAME to cordoba.intelisis.com.ar in both DNS views, with unrestricted public TCP ports 20284-20286 protected by TLS and separate Basic Auth credentials. The Cordoba S3 API and native SeaweedFS backends remain private; the four TIC S3 mappings remain planned and disabled. IoT now uses 138.121.100.6. Netmgr's External CNAME to lujan.intelisis.com.ar is already documented as published. LTS and groupware identities are deprecated. On October 16, the groupware.aero.com.ar Internal A record was removed; both Internal authorities now return authoritative NXDOMAIN at SOA 2026101601. Public resolvers already returned NXDOMAIN before the edit, so no External zone change was needed; External SOA remains 2026101402. Production Mailcow at 192.168.25.40 was not changed; mail.aero.com.ar continues resolving to its approved mail endpoint in both views. DNS retirement does not authorize deleting LXC 25004.
 
 planned_address_reassignments:
   - service: gps
     fqdn: gps.aero.com.ar
     current_public_address: 138.121.100.2
     target_public_address: 138.121.100.2
-    status: router_and_dns_verified_application_acceptance_pending
-    planned_ports: [tcp/80, tcp/443, tcp/5005, tcp/5027, tcp/5055, tcp/5056, tcp/5144, tcp/8082]
+    status: ssh_high_port_and_ingestion_operator_confirmed
+    planned_ports: [tcp/80, tcp/443, tcp/5005, tcp/5027, tcp/5055, tcp/5056, tcp/5144, tcp/8082, tcp/20083]
     blockers:
       - Internal authoritative DNS resolves gps.aero.com.ar to 192.168.25.8, and public resolvers return 138.121.100.2; the four CORE-router address, route, and Lujan NAT state were verified on October 15.
-      - Operator confirmed TCP 8080 is not required. Its active NAT mapping remains unchanged pending separate authorization; external TCP checks succeeded on the other eight required ports.
-      - Complete protocol-level acceptance for device-ingestion ports with an approved test device or owner confirmation; no address change is proposed.
+      - On October 16, key-based SSH succeeded at 138.121.100.2:20083 -> 192.168.25.8:22 after adding the dedicated environment key to the GPS guest.
+      - The operator authorized removal of the unused TCP 8080 mapping on October 16. It is no longer forwarded; the other eight public client ports remain unchanged.
+      - The operator confirms GPS protocol-level ingestion is already validated; no synthetic telemetry was sent and no address change is proposed.
   - service: iot
     fqdn: iot.intelisis.com.ar
     current_public_address: 138.121.101.3
     target_public_address: 138.121.100.6
-    status: external_a_published_service_validation_blocked
+    status: external_a_ptr_service_endpoints_and_cert_renewal_verified_admin_ssh_high_port_verified_legacy_path_retired
     planned_ports: [tcp/80, tcp/443, tcp/8883]
     blockers:
-      - External A now resolves to .100.6 and Internal A remains .25.7. The former .101.3 has no CORE assignment, route, or NAT; its stale PTR remains pending separate approval.
-      - TCP 80 is refused at the backend while guest port 1880 accepts connections; TLS on 443 fails negotiation and port 8883 presents an expired certificate. Repair and accept these services before considering the cutover complete.
-      - The enabled target TCP 8922 forward is administrative, separate from planned TCP 20073 on .100.15; do not change it without authorization. Confirm the effective firmware URL and listener.
+      - External A and PTR resolve to .100.6; Internal A remains .25.7. The former .101.3 has no CORE assignment, route, NAT, A, or PTR.
+      - Public TCP 80 maps to Node-RED guest port 1880. The effective orchestrator.firmware_base_url is http://iot.intelisis.com.ar/endpoint/firmware, and a capped public firmware GET returned HTTP 200. Node-RED v22.1.0 runs with ssl=false and HTTP-node Basic Auth disabled; endpoint-specific authentication remains enabled.
+      - Public HTTPS 443 and MQTT TLS 8883 present the renewed production certificate issued October 15, 2026, expiring January 13, 2027. The local Home Assistant app local_iot_certbot_dns is started in production mode with boot mode auto. On October 16, the operator approved a forced production renewal. The app completed DNS-01/RFC2136 issuance, deployed the certificate to /ssl, and successfully requested Home Assistant and Mosquitto restarts. The deployed and served HTTPS/MQTT certificate fingerprints match, hostname and chain checks pass, and HTTPS returns HTTP 200. The External intelisis.com.ar SOA serial is 2026101522 on primary and secondary; public resolvers show no leftover challenge TXT. Keep core_letsencrypt stopped on HTTP-01.
+      - PM_ADMIN_TOKEN, PM_DEVICE_SECRET, and PM_TRACCAR_INGEST_TOKEN are present in the protected runtime secrets file; unauthenticated device-command, admin, and heartbeat probes returned HTTP 401. The heartbeat helper's missing-token bypass is fixed and deployed; the configured static-auth password was rotated and the secrets file is owner-only.
+      - On October 16, 2026, the dedicated IoT-admin public key authenticated through both the former .100.6:8922 path and the new .100.6:20073 -> .25.7:8922 high-port path. The external firewall owner confirmed the TCP 20073 source policy and the NAT rule is active. Both DNS views remain unchanged and use iot.intelisis.com.ar; the public 8922 SSH forward was removed after acceptance while MQTT on 8883 remained enabled. RouterOS source filtering is not planned.
   - service: prestoprenda
     fqdn: web.prestoprenda.com.ar
     current_public_address: 138.121.101.2
     target_public_address: 138.121.100.7
-    status: router_state_verified_external_dns_owner_cutover_pending
+    status: operator_confirmed_external_dns_and_service_verified
     dns_owner: external
     internal_dns_publication: prohibited
-    planned_ports: verify_existing_nat_before_cutover
+    planned_ports: [tcp/22, tcp/80, tcp/443]
     blockers:
-      - Router assignment, host route, and NAT listeners are present on CORE-ROUTER-LUJAN; complete external-owner DNS control verification before cutover.
-      - Do not withdraw .101.2 until the replacement endpoint and external DNS have been accepted.
+      - The operator confirmed the customer-managed external DNS and service path are verified at 138.121.100.7; no local DNS migration is pending.
+      - Preserve the existing externally managed identity; do not add Internal DNS records. The former 138.121.101.2 path has no current CORE assignment or NAT.
   - service: ceis
     fqdn: ceis.polodesalud.com.ar
     current_public_address: 138.121.101.6
     target_public_address: 138.121.100.8
-    status: external_a_published_pending_ptr_and_application_acceptance
-    planned_ports: [tcp/80, tcp/443, tcp/12321, tcp/12323, udp/12321]
+    status: external_a_ptr_published_operator_confirmed_operational_web_only
+    planned_ports: [tcp/80, tcp/443]
     blockers:
       - External A now resolves to .100.8 and Internal A remains .25.151; the former .101.6 has no CORE assignment, route, or NAT.
-      - TCP 80, 443, 12321, and 12323 accept connections and HTTPS has a valid certificate; application-level acceptance and required UDP 12321 remain unverified.
-      - PTR for .100.8 is absent while .101.6 still has the old CEIS PTR; reverse-DNS cleanup requires separate approval. Shared-proxy migration remains a later change.
+      - The operator confirms CEIS was and remains operational; application acceptance is recorded. Only TCP 80 and 443 are forwarded to the guest. TCP 12321 and 12323 were removed as unused, and UDP 12321 is not published or tested.
+      - External PTR now maps .100.8 to CEIS and the former .101.6 PTR is removed. Shared-proxy migration remains a later change.
